@@ -1,29 +1,30 @@
 using UnityEngine;
+using PuzzleGame.Core.Enums;
 
-
-namespace PuzzleGame.Core;
-[System.Serializable]
-public class CubeData
+namespace PuzzleGame.Gameplay.Cubes
 {
-    public CubeType type;
-    public Vector3Int gridPosition;
-    public Direction direction;
-    public Color color;
-
-    public CubeData()
+    [System.Serializable]
+    public class CubeData
     {
-        type = CubeType.Basic;
-        gridPosition = Vector3Int.zero;
-        direction = Direction.Right;
-        color = Color.white;
-    }
+        public CubeType type;
+        public Vector3Int gridPosition;
+        public Direction direction;
+        public Color color;
 
-    public CubeData(CubeType cubeType, Vector3Int position, Direction moveDirection, Color cubeColor)
-    {
-        type = cubeType;
-        gridPosition = position;
-        direction = moveDirection;
-        color = cubeColor;
+        public CubeData()
+        {
+            type = CubeType.Basic;
+            gridPosition = Vector3Int.zero;
+            direction = Direction.Right;
+            color = Color.white;
+        }
+
+        public CubeData(CubeType type, Vector3Int position, Direction direction, Color color)
+        {
+            this.type = type;
+            this.gridPosition = position;
+            this.direction = direction;
+            this.color = color;
+        }
     }
-}
 }
