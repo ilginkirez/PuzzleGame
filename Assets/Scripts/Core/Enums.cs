@@ -12,4 +12,10 @@ namespace PuzzleGame.Core.Enums
         Left,
         Right
     }
+    
+    public enum CellType
+    {
+        Normal,
+        Blocked
+    }
 }
