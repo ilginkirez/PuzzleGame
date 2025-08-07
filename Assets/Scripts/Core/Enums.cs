@@ -1,7 +1,15 @@
-namespace PuzzleGame.Core.Patterns
+namespace PuzzleGame.Core.Enums
 {
-    public class Enums
+    public enum CubeType
     {
-        
+        Basic
+    }
+
+    public enum Direction
+    {
+        Up,
+        Down,
+        Left,
+        Right
     }
 }
