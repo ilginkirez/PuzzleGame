@@ -18,4 +18,23 @@ namespace PuzzleGame.Core.Enums
         Normal,
         Blocked
     }
+    
+    public enum MoveResult
+    {
+        Success,
+        Failed,
+        Blocked,
+        OutOfBounds,
+        NoMovesLeft
+    }
+    
+    public enum GameState
+    {
+        Menu,
+        Playing,
+        Paused,
+        LevelComplete,
+        LevelFailed
+    }
 }
+
