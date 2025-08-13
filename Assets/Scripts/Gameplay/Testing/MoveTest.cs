@@ -25,4 +25,6 @@ public class MoveTest_NewInput : MonoBehaviour
         if (Keyboard.current.dKey.wasPressedThisFrame)
             MoveManager.Instance.RequestMove(testCube, Direction.Right);
     }
+    
+    
 }
