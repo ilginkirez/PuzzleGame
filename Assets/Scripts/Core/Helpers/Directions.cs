@@ -5,23 +5,17 @@ namespace PuzzleGame.Core.Helpers
 {
     public static class Directions
     {
-        public static Vector3Int ToVector3Int(this Direction direction)
+        public static Vector3Int ToVector3Int(this Direction dir)
         {
-            return direction switch
+            switch (dir)
             {
-                Direction.Up    => new Vector3Int(0, 0, 1),
-                Direction.Down  => new Vector3Int(0, 0, -1),
-                Direction.Left  => new Vector3Int(-1, 0, 0),
-                Direction.Right => new Vector3Int(1, 0, 0),
-                _ => Vector3Int.zero
-            };
-        }
+                case Direction.Right: return new Vector3Int(+1, 0, 0);
+                case Direction.Left:  return new Vector3Int(-1, 0, 0);
+                case Direction.Up:    return new Vector3Int(0, 0, -1);
+                case Direction.Down:  return new Vector3Int(0, 0, +1);
 
-        public static Vector3 ToVector3(this Direction direction)
-        {
-            Vector3Int v = direction.ToVector3Int();
-            return new Vector3(v.x, v.y, v.z);
+                default: return Vector3Int.zero;
+            }
         }
-
     }
 }
