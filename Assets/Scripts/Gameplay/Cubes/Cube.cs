@@ -63,14 +63,13 @@ namespace PuzzleGame.Gameplay.Cubes
 
             float yAngle = moveDirection switch
             {
-                Direction.Right => 0f,
-                Direction.Up    => 90f,
-                Direction.Left  => 180f,
-                Direction.Down  => 270f,
+                Direction.Right => 0f,     // X+ yönü
+                Direction.Up    => 90f,    // Z+ yönü (değişti: 270f → 90f)
+                Direction.Left  => 180f,   // X- yönü  
+                Direction.Down  => 270f,   // Z- yönü (değişti: 90f → 270f)
                 _ => 0f
             };
 
-            // Prefab’ın yerel yönü ile bizim haritamızı hizalamak için telafi açısı
             arrowVisual.localRotation = Quaternion.Euler(0f, yAngle + arrowYawOffset, 0f);
         }
 
