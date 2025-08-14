@@ -7,9 +7,8 @@ namespace PuzzleGame.Gameplay.Grid
 {
     public class GridManager : Singleton<GridManager>
     {
-        [Header("Grid Settings")] [SerializeField]
-        private Vector3Int gridSize = new Vector3Int(10, 1, 10);
-
+        [Header("Grid Settings")]
+        [SerializeField] private Vector3Int gridSize = new Vector3Int(10, 1, 10);
         [SerializeField] private float cellSize = 1f;
         [SerializeField] private bool showGridGizmos = true;
 
@@ -61,12 +60,10 @@ namespace PuzzleGame.Gameplay.Grid
 
         public bool CanMoveTo(Vector3Int gridPosition, IGridObject movingObject = null)
         {
-            if (!IsValidPosition(gridPosition))
-                return false;
+            if (!IsValidPosition(gridPosition)) return false;
 
             GridCell cell = GetCell(gridPosition);
-            if (cell == null || cell.IsBlocked)
-                return false;
+            if (cell == null || cell.IsBlocked) return false;
 
             // Aynı pozisyonda başka objeler var mı kontrol et
             var objectsAtPos = GetObjectsAtPosition(gridPosition);
@@ -116,14 +113,24 @@ namespace PuzzleGame.Gameplay.Grid
             RegisterObject(gridObject);
         }
 
+        public void SetGridSize(Vector3Int newSize)
+        {
+            gridSize = newSize;
+            InitializeGrid(); // Yeni grid ile sıfırla
+        }
+
         private void OnDrawGizmos()
         {
             if (!showGridGizmos) return;
 
             Gizmos.color = Color.white;
-            Vector3 center = GridToWorldPosition(gridSize) * 0.5f - Vector3.one * cellSize * 0.5f;
-            Vector3 size = new Vector3(gridSize.x * cellSize, 0.1f, gridSize.z * cellSize);
+            Vector3 center = new Vector3(
+                (gridSize.x * cellSize) / 2f - cellSize / 2f,
+                0f,
+                (gridSize.z * cellSize) / 2f - cellSize / 2f
+            );
 
+            Vector3 size = new Vector3(gridSize.x * cellSize, 0.1f, gridSize.z * cellSize);
             Gizmos.DrawWireCube(center, size);
 
             // Grid çizgileri
@@ -142,8 +149,5 @@ namespace PuzzleGame.Gameplay.Grid
                 Gizmos.DrawLine(start, end);
             }
         }
-    
+    }
 }
-
-}
-
