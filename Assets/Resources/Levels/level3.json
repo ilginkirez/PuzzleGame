@@ -2,6 +2,12 @@
   "level": 3,
   "moves": 60,
   "gridSize": [12, 1, 12],
+  "camera": {
+    "height": 10,
+    "offsetX": 0.5,
+    "offsetZ": 1,
+    "padding": 1
+  },
   "cubes": [
     { "x": 5, "z": 10, "direction": "Up",   "color": "#E072DA" },
     { "x": 7, "z": 10, "direction": "Left", "color": "#FFD84D" },
