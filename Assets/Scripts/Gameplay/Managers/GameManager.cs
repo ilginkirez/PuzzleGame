@@ -15,44 +15,52 @@ namespace PuzzleGame.Gameplay.Managers
         [SerializeField] private int currentLevel = 1;
         [SerializeField] private int movesLeft;
         [SerializeField] private int maxMoves = 10;
-
+        
         [Header("Debug")]
         [SerializeField] private GameState currentState = GameState.Menu;
+        [SerializeField] private bool enableDebugLogs = true;
 
         // Events
         public event Action OnLevelComplete;
         public event Action OnLevelFailed;
-        public event Action<int> OnMovesChanged; // kalan hamle sayısı
-        public event Action OnGameStateChanged;
+        public event Action<int> OnMovesChanged;
+        public event Action<GameState> OnGameStateChanged;
+        public event Action<int, int> OnLevelStarted; // level, moves
 
         // Properties
         public GameState CurrentState => currentState;
         public int CurrentLevel => currentLevel;
         public int MovesLeft => movesLeft;
         public int MaxMoves => maxMoves;
+        public bool IsPlaying => currentState == GameState.Playing;
+        public bool CanUseMove => IsPlaying && movesLeft > 0;
 
         protected override void Awake()
         {
             base.Awake();
-            LoadProgress();
-            ChangeState(GameState.Menu);
+            // Awake'de currentLevel'ı değiştirme, menüde seçilecek
+            SetGameState(GameState.Menu);
         }
 
         #region Level Control
 
         public void StartLevel(int levelIndex, int moveLimit)
         {
-            // Pool temizle
-            if (PoolManager.Instance != null)
+            if (moveLimit <= 0)
+            {
+                DebugLogWarning($"Invalid move limit: {moveLimit}. Using default: {maxMoves}");
+                moveLimit = maxMoves;
+            }
 
-            currentLevel = levelIndex;
+            currentLevel = Mathf.Max(1, levelIndex);
             maxMoves = moveLimit;
             movesLeft = moveLimit;
-
-            ChangeState(GameState.Playing);
+            
+            SetGameState(GameState.Playing);
             OnMovesChanged?.Invoke(movesLeft);
-
-            Debug.Log($"Level {currentLevel} başlatıldı. Move Limit: {maxMoves}");
+            OnLevelStarted?.Invoke(currentLevel, maxMoves);
+            
+            DebugLog($"Level {currentLevel} başlatıldı. Move Limit: {maxMoves}");
         }
 
         [ContextMenu("Quick Start Level")]
@@ -63,61 +71,142 @@ namespace PuzzleGame.Gameplay.Managers
 
         public bool UseMove()
         {
-            if (movesLeft > 0 && currentState == GameState.Playing)
+            if (!CanUseMove)
             {
-                movesLeft--;
-                OnMovesChanged?.Invoke(movesLeft);
-
-                Debug.Log($"Move kullanıldı. Kalan: {movesLeft}/{maxMoves}");
-
-                if (movesLeft <= 0)
-                    FailLevel();
-
-                return true;
+                DebugLogWarning($"Cannot use move. State: {currentState}, Moves: {movesLeft}");
+                return false;
             }
-            return false;
+
+            movesLeft--;
+            OnMovesChanged?.Invoke(movesLeft);
+            DebugLog($"Move kullanıldı. Kalan: {movesLeft}/{maxMoves}");
+
+            if (movesLeft <= 0)
+            {
+                // Delay fail check to allow current move to complete
+                Invoke(nameof(CheckForLevelFail), 0.1f);
+            }
+
+            return true;
+        }
+
+        private void CheckForLevelFail()
+        {
+            if (currentState == GameState.Playing && movesLeft <= 0)
+            {
+                FailLevel();
+            }
         }
 
         public void CompleteLevel()
         {
-            if (currentState != GameState.Playing) return;
+            if (currentState != GameState.Playing)
+            {
+                DebugLogWarning($"Cannot complete level in state: {currentState}");
+                return;
+            }
 
-            ChangeState(GameState.LevelComplete);
+            SetGameState(GameState.LevelComplete);
             OnLevelComplete?.Invoke();
-
-            SaveProgress();
-
-            Debug.Log($"Level {currentLevel} tamamlandı! Kullanılan hamle: {maxMoves - movesLeft}");
+            
+            // Level tamamlandığında bir sonraki level'ı kaydet
+            int nextLevel = currentLevel + 1;
+            SaveProgressLevel(nextLevel);
+            
+            DebugLog($"Level {currentLevel} tamamlandı! Kullanılan hamle: {maxMoves - movesLeft}");
         }
 
         public void FailLevel()
         {
-            if (currentState != GameState.Playing) return;
+            if (currentState != GameState.Playing)
+            {
+                DebugLogWarning($"Cannot fail level in state: {currentState}");
+                return;
+            }
 
-            ChangeState(GameState.LevelFailed);
+            SetGameState(GameState.LevelFailed);
             OnLevelFailed?.Invoke();
-
-            Debug.Log($"Level {currentLevel} başarısız!");
+            DebugLog($"Level {currentLevel} başarısız!");
         }
 
         public void RestartLevel()
         {
-            Debug.Log($"Level {currentLevel} yeniden başlatılıyor...");
+            DebugLog($"Level {currentLevel} yeniden başlatılıyor...");
+            
+            // Cancel any pending fail checks
+            CancelInvoke(nameof(CheckForLevelFail));
+            
             StartLevel(currentLevel, maxMoves);
         }
 
         public void NextLevel()
         {
-            currentLevel++;
-            Debug.Log($"Sonraki level: {currentLevel}");
-            StartLevel(currentLevel, maxMoves);
+            int nextLevel = currentLevel + 1;
+            DebugLog($"Sonraki level: {nextLevel}");
+            
+            // currentLevel'ı güncelle ama kaydetme, level seçimi UI'dan gelecek
+            currentLevel = nextLevel;
         }
 
         public void AddMoves(int amount)
         {
+            if (amount <= 0)
+            {
+                DebugLogWarning($"Invalid move amount to add: {amount}");
+                return;
+            }
+
             movesLeft += amount;
             OnMovesChanged?.Invoke(movesLeft);
-            Debug.Log($"+{amount} hamle eklendi. Toplam: {movesLeft}");
+            DebugLog($"+{amount} hamle eklendi. Toplam: {movesLeft}");
+        }
+
+        #endregion
+
+        #region Level Selection
+
+        /// <summary>
+        /// Belirli bir level'ı başlatmak için kullan (UI'dan çağrılacak)
+        /// </summary>
+        public void SelectLevel(int levelIndex)
+        {
+            if (levelIndex <= 0)
+            {
+                DebugLogWarning($"Invalid level index: {levelIndex}");
+                return;
+            }
+
+            currentLevel = levelIndex;
+            DebugLog($"Level {currentLevel} seçildi");
+            
+            // LevelManager'a haber ver ki bu level'ı başlatsın
+            if (LevelManager.Instance != null)
+            {
+                LevelManager.Instance.StartLevel(currentLevel);
+            }
+        }
+
+        /// <summary>
+        /// Mevcut kayıtlı progress level'ını döndürür (menü için)
+        /// </summary>
+        public int GetSavedLevel()
+        {
+            return PlayerPrefs.GetInt("LastLevel", 1);
+        }
+
+        /// <summary>
+        /// Level seçiminde oyunu başlatmadan sadece currentLevel'ı günceller
+        /// </summary>
+        public void SetCurrentLevelWithoutStarting(int levelIndex)
+        {
+            if (levelIndex <= 0)
+            {
+                DebugLogWarning($"Invalid level index: {levelIndex}");
+                return;
+            }
+
+            currentLevel = levelIndex;
+            DebugLog($"Current level set to: {currentLevel} (without starting)");
         }
 
         #endregion
@@ -126,32 +215,42 @@ namespace PuzzleGame.Gameplay.Managers
 
         public void TogglePause()
         {
-            if (currentState == GameState.Playing)
+            switch (currentState)
             {
-                ChangeState(GameState.Paused);
-                Time.timeScale = 0f;
-            }
-            else if (currentState == GameState.Paused)
-            {
-                ChangeState(GameState.Playing);
-                Time.timeScale = 1f;
+                case GameState.Playing:
+                    SetGameState(GameState.Paused);
+                    Time.timeScale = 0f;
+                    break;
+                case GameState.Paused:
+                    SetGameState(GameState.Playing);
+                    Time.timeScale = 1f;
+                    break;
+                default:
+                    DebugLogWarning($"Cannot toggle pause from state: {currentState}");
+                    break;
             }
         }
 
         public void ReturnToMenu()
         {
-            ChangeState(GameState.Menu);
+            CancelInvoke();
+            
+            SetGameState(GameState.Menu);
             Time.timeScale = 1f;
-
-            // Menüye dönünce tüm objeleri havuza iade et
-            Debug.Log("Ana menüye dönülüyor...");
+            // Menüye dönerken progress yükleme, level seçimi UI'dan gelecek
+            DebugLog("Ana menüye dönülüyor...");
         }
 
-        private void ChangeState(GameState newState)
+        public void SetGameState(GameState newState)
         {
+            if (currentState == newState)
+                return;
+
+            GameState previousState = currentState;
             currentState = newState;
-            OnGameStateChanged?.Invoke();
-            Debug.Log($"Game State değişti: {currentState}");
+            
+            OnGameStateChanged?.Invoke(currentState);
+            DebugLog($"Game State değişti: {previousState} -> {currentState}");
         }
 
         #endregion
@@ -160,19 +259,60 @@ namespace PuzzleGame.Gameplay.Managers
 
         private void SaveProgress()
         {
-            PlayerPrefs.SetInt("LastLevel", currentLevel);
-            PlayerPrefs.Save();
+            SaveProgressLevel(currentLevel);
+        }
+
+        private void SaveProgressLevel(int levelToSave)
+        {
+            try
+            {
+                PlayerPrefs.SetInt("LastLevel", levelToSave);
+                PlayerPrefs.SetInt("GameVersion", 1);
+                PlayerPrefs.Save();
+                DebugLog($"Progress saved: Level {levelToSave}");
+            }
+            catch (System.Exception e)
+            {
+                DebugLogError($"Failed to save progress: {e.Message}");
+            }
         }
 
         private void LoadProgress()
         {
-            if (PlayerPrefs.HasKey("LastLevel"))
-                currentLevel = PlayerPrefs.GetInt("LastLevel");
+            try
+            {
+                if (PlayerPrefs.HasKey("LastLevel"))
+                {
+                    int savedLevel = PlayerPrefs.GetInt("LastLevel", 1);
+                    DebugLog($"Progress loaded (saved level): {savedLevel}");
+                }
+            }
+            catch (System.Exception e)
+            {
+                DebugLogError($"Failed to load progress: {e.Message}");
+            }
         }
 
         #endregion
 
         #region Debug Methods
+
+        private void DebugLog(string message)
+        {
+            if (enableDebugLogs)
+                Debug.Log($"[GameManager] {message}");
+        }
+
+        private void DebugLogWarning(string message)
+        {
+            if (enableDebugLogs)
+                Debug.LogWarning($"[GameManager] {message}");
+        }
+
+        private void DebugLogError(string message)
+        {
+            Debug.LogError($"[GameManager] {message}");
+        }
 
         [ContextMenu("Debug - Complete Level")]
         private void DebugCompleteLevel() => CompleteLevel();
@@ -182,6 +322,41 @@ namespace PuzzleGame.Gameplay.Managers
 
         [ContextMenu("Debug - Add 5 Moves")]
         private void DebugAddMoves() => AddMoves(5);
+
+        [ContextMenu("Debug - Reset Progress")]
+        private void DebugResetProgress()
+        {
+            PlayerPrefs.DeleteAll();
+            currentLevel = 1;
+            DebugLog("Progress reset");
+        }
+
+        [ContextMenu("Debug - Show Current Values")]
+        private void DebugShowValues()
+        {
+            DebugLog($"Current Level: {currentLevel}");
+            DebugLog($"Saved Level: {GetSavedLevel()}");
+            DebugLog($"Current State: {currentState}");
+        }
+
+        #endregion
+
+        #region Unity Lifecycle
+
+        private void OnDestroy()
+        {
+            // Cleanup
+            CancelInvoke();
+        }
+
+        private void OnApplicationPause(bool pauseStatus)
+        {
+            if (pauseStatus && IsPlaying)
+            {
+                SetGameState(GameState.Paused);
+                Time.timeScale = 0f;
+            }
+        }
 
         #endregion
     }
