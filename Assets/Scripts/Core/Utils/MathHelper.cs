@@ -14,19 +14,20 @@ namespace PuzzleGame.Core.Helpers
         public static Vector3 GridToWorld(Vector3Int gridPos, float cellSize)
         {
             return new Vector3(
-                gridPos.x * cellSize,
+                gridPos.x * cellSize + cellSize * 0.5f, // X ekseninde yarım hücre kaydır
                 gridPos.y * cellSize,
-                gridPos.z * cellSize
+                gridPos.z * cellSize + cellSize * 0.5f  // Z ekseninde yarım hücre kaydır
             );
         }
 
         public static Vector3Int WorldToGrid(Vector3 worldPos, float cellSize)
         {
             return new Vector3Int(
-                Mathf.RoundToInt(worldPos.x / cellSize),
-                Mathf.RoundToInt(worldPos.y / cellSize),
-                Mathf.RoundToInt(worldPos.z / cellSize)
+                Mathf.FloorToInt(worldPos.x / cellSize), // floor ile indeks yakala
+                Mathf.FloorToInt(worldPos.y / cellSize),
+                Mathf.FloorToInt(worldPos.z / cellSize)
             );
+
         }
     }
 }

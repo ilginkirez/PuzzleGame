@@ -32,7 +32,6 @@ public class LevelFailureUI : UIPanel
         {
             int failedLevel = GameManager.Instance.CurrentLevel;
             failureText.text = $"Level {failedLevel} Failed!";
-            failureText.color = Color.red;
         }
     }
 

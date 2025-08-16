@@ -11,8 +11,8 @@ namespace PuzzleGame.Core.Helpers
             {
                 case Direction.Right: return new Vector3Int(+1, 0, 0);
                 case Direction.Left:  return new Vector3Int(-1, 0, 0);
-                case Direction.Up:    return new Vector3Int(0, 0, -1);
-                case Direction.Down:  return new Vector3Int(0, 0, +1);
+                case Direction.Down:    return new Vector3Int(0, 0, -1);
+                case Direction.Up:  return new Vector3Int(0, 0, +1);
 
                 default: return Vector3Int.zero;
             }
