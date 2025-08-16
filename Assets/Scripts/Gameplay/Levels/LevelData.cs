@@ -1,13 +1,26 @@
 using UnityEngine;
 using PuzzleGame.Core.Enums;
 
+using UnityEngine;
+using PuzzleGame.Core.Enums;
+
 [System.Serializable]
 public class LevelData
 {
     public int level;
     public int moves;
     public int[] gridSize; // [x,y,z]
+    public CameraData camera; // 👈 kamera ayarları
     public CubeEntry[] cubes;
+}
+
+[System.Serializable]
+public class CameraData
+{
+    public float height;
+    public float offsetX;
+    public float offsetZ;
+    public int padding;
 }
 
 [System.Serializable]

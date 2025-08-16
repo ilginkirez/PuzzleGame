@@ -129,9 +129,19 @@ namespace PuzzleGame.Gameplay.Managers
             GameManager.Instance?.StartLevel(data.level, data.moves);
             SpawnCubes(data);
 
+            // 🔹 Kamera JSON’dan gelsin
+            if (data.camera != null)
+            {
+                cameraHeight       = data.camera.height;
+                cameraOffsetX      = data.camera.offsetX;
+                cameraOffsetZ      = data.camera.offsetZ;
+                cameraPaddingCells = data.camera.padding;
+            }
+
             if (centerCameraAfterLoad) FitCameraToContent();
             OnLevelStarted?.Invoke(CurrentLevel);
         }
+
 
         private void SpawnCubes(LevelData data)
         {

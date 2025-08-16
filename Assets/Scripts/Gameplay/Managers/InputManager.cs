@@ -36,15 +36,8 @@ namespace PuzzleGame.Gameplay.Managers
                 return;
 
             Ray ray = gameCamera.ScreenPointToRay(screenPosition);
-            if (Physics.Raycast(ray, out RaycastHit hit, maxClickDistance, clickableLayer))
-            {
-                var clickable = hit.collider.GetComponentInParent<IClickable>();
-                if (clickable != null && clickable.IsClickable)
-                {
-                    clickable.OnClick();
-                }
+            
                 
             }
         }
     }
-}

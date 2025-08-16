@@ -4,6 +4,7 @@ using PuzzleGame.Core.Interfaces;
 using PuzzleGame.Gameplay.Managers;
 using PuzzleGame.Gameplay.Grid;
 using PuzzleGame.Core.Helpers;
+using System;
 
 namespace PuzzleGame.Gameplay.Cubes
 {
@@ -11,26 +12,24 @@ namespace PuzzleGame.Gameplay.Cubes
     {
         [Header("Cube Settings")]
         [SerializeField] private CubeType cubeType = CubeType.Basic;
-
-        [Tooltip("Hareket yönünün tek kaynağı. JSON -> CubeData.direction ile gelir.")]
         [SerializeField] private Direction moveDirection = Direction.Right;
-
         [SerializeField] private Color cubeColor = Color.white;
 
         [Header("Visuals")]
-        [SerializeField] private Transform arrowVisual; 
-        [SerializeField] private float arrowYawOffset = 0f; // ← Inspector’dan ayarlanacak
+        [SerializeField] private Transform arrowVisual;
+        [SerializeField] private float arrowYawOffset = 0f;
 
         public bool IsClickable => true;
         public bool IsMoving { get; private set; }
         public Vector3Int GridPosition { get; set; }
 
+        // Event’ler (varsa)
+        public event Action<Cube> OnCubeDestroyed;
+
         public void Initialize(CubeData data)
         {
             cubeType = data.type;
             cubeColor = data.color;
-
-            // JSON'dan gelen yön -> tek gerçek kaynak
             SetDirection(data.direction);
 
             GridPosition = data.gridPosition;
@@ -38,35 +37,49 @@ namespace PuzzleGame.Gameplay.Cubes
             UpdateColor();
         }
 
-        private void UpdateColor()
+        private void OnMouseDown()
         {
-            if (TryGetComponent(out Renderer r))
-                r.material.color = cubeColor;
+            MoveManager.Instance.RequestMove(this, moveDirection);
         }
 
-        /// <summary>
-        /// Yönü programatik olarak değiştir (JSON yüklenince, power-up vb.).
-        /// Görsel oku da aynı yöne çevirir.
-        /// </summary>
+        private void UpdateColor()
+        {
+            // Küpün ana rengi
+            if (TryGetComponent(out Renderer r))
+                r.material.color = cubeColor;
+
+            // Oku renklendir
+            UpdateArrowColor();
+        }
+
+        private void UpdateArrowColor()
+        {
+            if (arrowVisual != null && arrowVisual.TryGetComponent(out Renderer arrowRenderer))
+            {
+                // sharedMaterial kullanarak draw call artışını engelle
+                Material mat = arrowRenderer.sharedMaterial;
+
+                // Oku sabit beyaz yap
+                mat.color = Color.white;
+            }
+        }
+
         public void SetDirection(Direction dir)
         {
             moveDirection = dir;
             UpdateArrowVisual();
         }
 
-        /// <summary>
-        /// Ok child'ının yerel Y rotasyonunu yönle eşleştir.
-        /// </summary>
         private void UpdateArrowVisual()
         {
             if (arrowVisual == null) return;
 
             float yAngle = moveDirection switch
             {
-                Direction.Right => 0f,     // X+ yönü
-                Direction.Up    => 90f,    // Z+ yönü (değişti: 270f → 90f)
-                Direction.Left  => 180f,   // X- yönü  
-                Direction.Down  => 270f,   // Z- yönü (değişti: 90f → 270f)
+                Direction.Right => 0f,
+                Direction.Up    => 270f,
+                Direction.Left  => 180f,
+                Direction.Down  => 90f,
                 _ => 0f
             };
 
@@ -78,25 +91,8 @@ namespace PuzzleGame.Gameplay.Cubes
             UpdateArrowVisual();
         }
 
-
-        // (Opsiyonel) Prefabı editor’da manuel döndürürsen buradan direction türetebilirsin.
-        private Direction DirectionFromArrowRotation()
-        {
-            if (arrowVisual == null) return moveDirection;
-
-            float y = arrowVisual.localEulerAngles.y;
-            // 0/90/180/270 toleranslı eşleme
-            if (Mathf.Abs(Mathf.DeltaAngle(y, 0f)) <= 45f)   return Direction.Right;
-            if (Mathf.Abs(Mathf.DeltaAngle(y, 90f)) <= 45f)  return Direction.Up;
-            if (Mathf.Abs(Mathf.DeltaAngle(y, 180f)) <= 45f) return Direction.Left;
-            return Direction.Down;
-        }
-
-        // Editor’da inspector’da yön alanını değiştirince oku otomatik çevirsin (quality of life)
-
         public void OnClick()
         {
-            // her tıklamada JSON’dan gelen yönü kullan (okla aynı)
             MoveManager.Instance.RequestMove(this, moveDirection);
         }
 
@@ -130,6 +126,34 @@ namespace PuzzleGame.Gameplay.Cubes
         }
 
         public Vector3 WorldPosition => transform.position;
+
         public void SetGridPosition(Vector3Int position) => GridPosition = position;
+
+        /// <summary>
+        /// Pool’dan iade edilirken sıfırlama yapılır.
+        /// </summary>
+        public void ResetCube()
+        {
+            cubeType = CubeType.Basic;
+            moveDirection = Direction.Right;
+            cubeColor = Color.white;
+            IsMoving = false;
+            GridPosition = Vector3Int.zero;
+
+            UpdateColor();
+            UpdateArrowVisual();
+
+            OnCubeDestroyed = null; // Event temizliği
+        }
+
+        /// <summary>
+        /// PoolManager tarafından çağrılacak hook.
+        /// </summary>
+        public void OnReturnedToPool()
+        {
+            ResetCube();
+            GridManager.Instance.UnregisterObject(this);
+            gameObject.SetActive(false);
+        }
     }
 }
