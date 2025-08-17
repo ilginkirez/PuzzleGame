@@ -27,7 +27,7 @@
     { "x": 7, "z": 4, "direction": "Up",    "color": "#E072DA" },
     
     { "x": 3, "z": 5, "direction": "Right", "color": "#F7A672" },
-    { "x": 3, "z": 3, "direction": "Up",    "color": "#728EF7" },
+    { "x": 3, "z": 3, "direction": "Up",    "color": "#E072DA" },
     { "x": 4, "z": 3, "direction": "Left",  "color": "#FFD84D" },
 
     { "x": 3, "z": 2, "direction": "Right", "color": "#F7A672" },
