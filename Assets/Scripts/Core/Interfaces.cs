@@ -23,4 +23,12 @@ namespace PuzzleGame.Core.Interfaces
         void OnClick();
         bool IsClickable { get; }
     }
-}
+    
+        public interface IInputHandler
+        {
+            bool IsInputDown();                  // Dokunma / tıklama başladı mı?
+            Vector3 GetInputPosition();          // Ekran pozisyonu
+        }
+    }
+
+    
