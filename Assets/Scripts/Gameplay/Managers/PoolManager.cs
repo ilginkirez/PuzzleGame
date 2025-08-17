@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using PuzzleGame.Core.Interfaces;
+using PuzzleGame.Gameplay.Grid; // IGridObject için
 
 namespace PuzzleGame.Gameplay.Managers
 {
@@ -25,10 +27,8 @@ namespace PuzzleGame.Gameplay.Managers
         private readonly Dictionary<string, Queue<GameObject>> poolDictionary = new();
         private readonly Dictionary<Type, string> typeToKey = new();
 
-        // Yeni: Aktif objeleri PoolManager kendisi tutar
         private readonly HashSet<MonoBehaviour> activeObjects = new();
-
-        private Transform container; // Tüm pooled objeleri tutar
+        private Transform container;
 
         private void Awake()
         {
@@ -40,7 +40,6 @@ namespace PuzzleGame.Gameplay.Managers
             Instance = this;
             DontDestroyOnLoad(gameObject);
 
-            // Alt klasör oluştur: "Pooled Objects"
             container = new GameObject("Pooled Objects").transform;
             container.parent = transform;
             container.gameObject.hideFlags = HideFlags.HideInHierarchy;
@@ -98,6 +97,9 @@ namespace PuzzleGame.Gameplay.Managers
             }
             else
             {
+                // 🔴 Burada havuz taşmış oluyor
+                Debug.LogWarning($"[PoolManager] Pool '{key}' boşaldı, yeni Instantiate yapılıyor!");
+        
                 var prefab = GetPrefabByKey(key);
                 if (prefab == null) return null;
                 obj = Instantiate(prefab, container);
@@ -107,9 +109,7 @@ namespace PuzzleGame.Gameplay.Managers
             obj.SetActive(true);
             var component = obj.GetComponent<T>();
 
-            // Yeni: Aktif objeyi kaydet
             activeObjects.Add(component);
-
             return component;
         }
 
@@ -129,22 +129,27 @@ namespace PuzzleGame.Gameplay.Managers
                 return;
             }
 
+            // 🔹 Grid’den çıkar
+            if (obj is IGridObject gridObj)
+            {
+                GridManager.Instance?.UnregisterObject(gridObj);
+            }
+
+            // 🔹 Collider disable (klik bug fix)
+            if (obj.TryGetComponent<Collider>(out var col))
+                col.enabled = false;
+
             obj.gameObject.SetActive(false);
             queue.Enqueue(obj.gameObject);
 
-            // Aktif listeden çıkar
             activeObjects.Remove(obj);
         }
 
-        /// <summary>
-        /// Tüm belirli tip objeleri anında iade et (FindObjectsOfType YOK!)
-        /// </summary>
         public void ReturnAll<T>() where T : MonoBehaviour
         {
             if (!typeToKey.TryGetValue(typeof(T), out string key)) return;
             if (!poolDictionary.ContainsKey(key)) return;
 
-            // Sadece PoolManager'in bildiği aktif objeler
             var toReturn = new List<T>(activeObjects.Count);
             foreach (var comp in activeObjects)
             {

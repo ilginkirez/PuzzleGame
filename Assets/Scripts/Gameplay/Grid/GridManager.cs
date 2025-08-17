@@ -43,6 +43,14 @@ namespace PuzzleGame.Gameplay.Grid
             }
         }
 
+        public void ClearAll()
+        {
+            foreach (var kvp in objectsAtPosition)
+            {
+                kvp.Value.Clear();
+            }
+        }
+
         public bool IsValidPosition(Vector3Int gridPosition)
         {
             return MathHelper.IsInBounds(gridPosition, gridSize);
@@ -65,11 +73,10 @@ namespace PuzzleGame.Gameplay.Grid
             GridCell cell = GetCell(gridPosition);
             if (cell == null || cell.IsBlocked) return false;
 
-            // Aynı pozisyonda başka objeler var mı kontrol et
             var objectsAtPos = GetObjectsAtPosition(gridPosition);
             foreach (var obj in objectsAtPos)
             {
-                if (obj != movingObject) // Kendisi hariç
+                if (obj != movingObject)
                     return false;
             }
 
@@ -116,7 +123,7 @@ namespace PuzzleGame.Gameplay.Grid
         public void SetGridSize(Vector3Int newSize)
         {
             gridSize = newSize;
-            InitializeGrid(); // Yeni grid ile sıfırla
+            InitializeGrid();
         }
 
         private void OnDrawGizmos()
@@ -133,7 +140,6 @@ namespace PuzzleGame.Gameplay.Grid
             Vector3 size = new Vector3(gridSize.x * cellSize, 0.1f, gridSize.z * cellSize);
             Gizmos.DrawWireCube(center, size);
 
-            // Grid çizgileri
             Gizmos.color = Color.gray;
             for (int x = 0; x <= gridSize.x; x++)
             {
@@ -150,5 +156,4 @@ namespace PuzzleGame.Gameplay.Grid
             }
         }
     }
-
-}
+}  

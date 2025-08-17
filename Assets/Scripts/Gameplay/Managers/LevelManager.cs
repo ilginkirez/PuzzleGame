@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using PuzzleGame.Core.Enums;
 using PuzzleGame.Core.Helpers;
 using PuzzleGame.Gameplay.Cubes;
 using PuzzleGame.Gameplay.Grid;
+using DG.Tweening;
 
 namespace PuzzleGame.Gameplay.Managers
 {
@@ -24,7 +26,7 @@ namespace PuzzleGame.Gameplay.Managers
         [SerializeField] private float cameraPaddingCells = 1f;
         [SerializeField] private float cameraHeight = 10f;
 
-        // 🔹 Inspector’dan ayarlanabilir offset
+        // 🔹 Inspector'dan ayarlanabilir offset
         [SerializeField] private float cameraOffsetX = 0.5f;
         [SerializeField] private float cameraOffsetZ = 0.5f;
 
@@ -127,9 +129,8 @@ namespace PuzzleGame.Gameplay.Managers
             catch (Exception e) { Debug.LogError($"JSON parse error: {e.Message}"); return; }
 
             GameManager.Instance?.StartLevel(data.level, data.moves);
-            SpawnCubes(data);
 
-            // 🔹 Kamera JSON’dan gelsin
+            // 🔹 Kamera JSON'dan gelsin
             if (data.camera != null)
             {
                 cameraHeight       = data.camera.height;
@@ -138,10 +139,133 @@ namespace PuzzleGame.Gameplay.Managers
                 cameraPaddingCells = data.camera.padding;
             }
 
-            if (centerCameraAfterLoad) FitCameraToContent();
+            // 🔹 ÖNCE kamerayı ayarla (animasyon BAŞLAMADAN)
+            if (centerCameraAfterLoad) 
+            {
+                SetupCameraBeforeSpawn(data);
+            }
+
+            // ✅ SONRA animasyonlu spawn
+            StartCoroutine(SpawnCubesCoroutine(data));
+
             OnLevelStarted?.Invoke(CurrentLevel);
         }
 
+        private void SetupCameraBeforeSpawn(LevelData data)
+        {
+            if (data.cubes == null || data.cubes.Length == 0) return;
+
+            // 🔹 JSON'dan cube pozisyonlarını analiz et
+            int minX = int.MaxValue, maxX = int.MinValue;
+            int minZ = int.MaxValue, maxZ = int.MinValue;
+
+            foreach (var c in data.cubes)
+            {
+                minX = Mathf.Min(minX, c.x);
+                maxX = Mathf.Max(maxX, c.x);
+                minZ = Mathf.Min(minZ, c.z);
+                maxZ = Mathf.Max(maxZ, c.z);
+            }
+
+            float cell = GridManager.Instance.CellSize;
+            int minSize = 6;
+            int levelWidth = Mathf.Max((maxX - minX + 1), minSize);
+            int levelHeight = Mathf.Max((maxZ - minZ + 1), minSize);
+
+            float worldWidth = levelWidth * cell;
+            float worldHeight = levelHeight * cell;
+
+            // 🔹 Blokların ortası (aynı hesaplama)
+            Vector3 centerWorld = new(
+                (minX + maxX) * 0.5f * cell,
+                0f,
+                (minZ + maxZ) * 0.5f * cell
+            );
+
+            // 🔹 Inspector offset uygula
+            centerWorld.x += cameraOffsetX;
+            centerWorld.z += cameraOffsetZ;
+
+            var cam = Camera.main;
+            if (cam != null)
+            {
+                cam.orthographic = true;
+                cam.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+                cam.transform.position = new Vector3(centerWorld.x, cameraHeight, centerWorld.z);
+
+                float aspect = cam.aspect;
+                float padding = cameraPaddingCells * cell;
+
+                cam.orthographicSize = Mathf.Max(
+                    (worldHeight / 2f) + padding,
+                    (worldWidth / 2f) / aspect + padding
+                );
+
+                DebugLog($"[LevelManager] Camera pre-positioned at: {cam.transform.position}");
+            }
+        }
+
+        private System.Collections.IEnumerator SpawnCubesCoroutine(LevelData data)
+        {
+            if (data.cubes == null) yield break;
+
+            // satırlara göre grupla
+            var rows = new Dictionary<int, List<(CubeData, Vector3)>>();
+
+            foreach (var c in data.cubes)
+            {
+                Direction dir = ParseDirection(c.direction);
+                Color col = ParseColor(c.color, Color.white);
+                Vector3Int gridPos = new(c.x, 0, c.z);
+                Vector3 worldPos = GridManager.Instance.GridToWorldPosition(gridPos);
+
+                var cd = new CubeData(CubeType.Basic, gridPos, dir, col);
+
+                if (!rows.ContainsKey(gridPos.z))
+                    rows[gridPos.z] = new List<(CubeData, Vector3)>();
+
+                rows[gridPos.z].Add((cd, worldPos));
+            }
+
+            // sırayla satır spawn et
+            foreach (var row in rows.OrderBy(r => r.Key))
+            {
+                foreach (var (cd, worldPos) in row.Value)
+                {
+                    var cube = SpawnCubeAnimated(cd, worldPos);
+                    if (cube != null)
+                    {
+                        spawnedCubes.Add(cube);
+                        GridManager.Instance.RegisterObject(cube);
+                    }
+                }
+
+                yield return new WaitForSeconds(0.12f); // satırlar arası delay
+            }
+        }
+
+        private Cube SpawnCubeAnimated(CubeData data, Vector3 worldPos)
+        {
+            var cube = PoolManager.Instance.Get<Cube>();
+            if (cube == null) return null;
+
+            cube.Initialize(data);
+
+            // 🎯 Animasyon için başlangıç pozisyonu
+            Vector3 startPos = worldPos + Vector3.up * 1.2f;
+
+            // Başlangıç pozisyonu ve scale
+            cube.transform.position = startPos;
+            cube.transform.localScale = Vector3.zero;
+
+            // DOTween animasyonu
+            Sequence seq = DOTween.Sequence();
+            seq.Append(cube.transform.DOMove(worldPos, 0.35f).SetEase(Ease.OutQuad));
+            seq.Join(cube.transform.DOScale(Vector3.one, 0.35f).SetEase(Ease.OutBack));
+            seq.SetDelay(UnityEngine.Random.Range(0f, 0.15f));
+
+            return cube;
+        }
 
         private void SpawnCubes(LevelData data)
         {
@@ -306,3 +430,4 @@ namespace PuzzleGame.Gameplay.Managers
         private void DebugStartLevel4() => StartLevel(4);
     }
 }
+   

@@ -1178,7 +1178,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   moveSpeed: 5
   allowSimultaneousMoves: 1
-  collisionFlashDuration: 0.5
   exitDistance: 15
 --- !u!1 &493598590
 GameObject:
@@ -2165,6 +2164,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   canvasGroup: {fileID: 0}
+  panelRoot: {fileID: 1078292579}
   nextLevelButton: {fileID: 388026115}
   successText: {fileID: 159651488}
   celebrationFX: {fileID: 0}
@@ -3056,6 +3056,7 @@ MonoBehaviour:
   retryButton: {fileID: 194344779}
   failureText: {fileID: 800469404}
   failureSound: {fileID: 0}
+  panelRoot: {fileID: 0}
 --- !u!114 &1714808758
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3160,12 +3161,12 @@ MonoBehaviour:
   m_fontMaterials: []
   m_fontColor32:
     serializedVersion: 2
-    rgba: 4287627442
-  m_fontColor: {r: 0.6981132, g: 0, b: 0.56513846, a: 1}
-  m_enableVertexGradient: 0
+    rgba: 4290865138
+  m_fontColor: {r: 0.9490196, g: 0.40392157, b: 0.75686276, a: 1}
+  m_enableVertexGradient: 1
   m_colorMode: 3
   m_fontColorGradient:
-    topLeft: {r: 1, g: 1, b: 1, a: 1}
+    topLeft: {r: 0.9098039, g: 0, b: 0, a: 1}
     topRight: {r: 1, g: 1, b: 1, a: 1}
     bottomLeft: {r: 1, g: 1, b: 1, a: 1}
     bottomRight: {r: 1, g: 1, b: 1, a: 1}
@@ -3427,7 +3428,7 @@ MonoBehaviour:
   currentLevel: 1
   movesLeft: 20
   maxMoves: 20
-  currentState: 0
+  currentState: 4
   enableDebugLogs: 1
 --- !u!1 &2052065685
 GameObject:
@@ -3481,7 +3482,9 @@ MonoBehaviour:
   centerCameraAfterLoad: 1
   cameraPaddingCells: 1
   cameraHeight: 10
-  defaultStartLevel: 1
+  cameraOffsetX: 0.5
+  cameraOffsetZ: 0.5
+  defaultStartLevel: 3
   loadDefaultLevelOnStart: 1
   enableDebugLogs: 1
 --- !u!1 &2066805873
