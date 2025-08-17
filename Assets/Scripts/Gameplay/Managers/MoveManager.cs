@@ -1,11 +1,12 @@
 using UnityEngine;
 using PuzzleGame.Core.Enums;
-using PuzzleGame.Core.Interfaces;
 using PuzzleGame.Core.Helpers;
 using PuzzleGame.Gameplay.Cubes;
 using PuzzleGame.Gameplay.Managers;
 using PuzzleGame.Gameplay.Grid;
 using System.Collections;
+using System.Collections.Generic;
+using DG.Tweening;
 
 namespace PuzzleGame.Gameplay.Managers
 {
@@ -16,89 +17,82 @@ namespace PuzzleGame.Gameplay.Managers
     public class MoveManager : Singleton<MoveManager>
     {
         [Header("Move Settings")]
-        [SerializeField, Tooltip("Küpün hareket hızı (saniye başına birim).")]
-        private float moveSpeed = 3f;
-        
-        [SerializeField, Tooltip("Birden fazla küpün aynı anda hareket etmesine izin ver.")]
-        private bool allowSimultaneousMoves = false;
+        [SerializeField] private float moveSpeed = 3f;
+        [SerializeField] private bool allowSimultaneousMoves = false;
 
         [Header("Collision Settings")]
-        [SerializeField, Tooltip("Çarpışma anında küpün kırmızı yanma süresi.")]
-        private float collisionFlashDuration = 0.5f;
-        
-        [SerializeField, Tooltip("Ekrandan çıkmak için maksimum mesafe.")]
-        private float exitDistance = 15f;
-        
-        // Aktif hareket eden küp sayısı
+        [SerializeField] private float exitDistance = 15f;
+
+        [Header("🔊 Collision Sound Settings")]
+        [SerializeField] private AudioSource audioSource;
+        [SerializeField] private AudioClip collisionSound;
+        [SerializeField] private AudioClip[] errorSounds;
+        [Range(0f, 1f)] [SerializeField] private float collisionVolume = 0.8f;
+
         private int activeMoves = 0;
-        
-        // Eventler - UI veya diğer sistemler dinleyebilir
+        private Dictionary<Cube, Color> originalColors = new Dictionary<Cube, Color>();
+
+        // Events
         public System.Action<Cube> OnCubeStartMove;
         public System.Action<Cube, MoveResult> OnCubeMoveComplete;
-        public System.Action<Cube, Cube> OnCubeCollision; // Çarpışma eventi
-        
-        // Okunabilir özellikler
+        public System.Action<Cube, Cube> OnCubeCollision;
+
         public bool CanMove => activeMoves == 0 || allowSimultaneousMoves;
         public float MoveSpeed => moveSpeed;
-        
-        /// <summary>
-        /// Bir küp için hareket isteği oluşturur.
-        /// </summary>
+
+        private void Awake()
+        {
+            // 🔊 AudioSource ekle
+            if (audioSource == null)
+                audioSource = GetComponent<AudioSource>();
+            
+            if (audioSource == null)
+                audioSource = gameObject.AddComponent<AudioSource>();
+        }
+
         public void RequestMove(Cube cube, Direction direction)
         {
-            // Henüz hareket edilemiyorsa veya move hakkı yoksa
             if (!CanMove || !GameManager.Instance.UseMove())
             {
                 OnCubeMoveComplete?.Invoke(cube, MoveResult.Failed);
                 return;
             }
-            
             StartContinuousMove(cube, direction);
         }
-        
-        /// <summary>
-        /// Küpü sürekli hareket ettir - engele çarpana veya ekrandan çıkana kadar
-        /// </summary>
+
         private void StartContinuousMove(Cube cube, Direction direction)
         {
             activeMoves++;
             OnCubeStartMove?.Invoke(cube);
-            
+
             StartCoroutine(ContinuousMoveCoroutine(cube, direction));
         }
-        
-        /// <summary>
-        /// Sürekli hareket coroutine'i
-        /// </summary>
+
         private IEnumerator ContinuousMoveCoroutine(Cube cube, Direction direction)
         {
-            Vector3 targetPosition = cube.transform.position;
             bool isMoving = true;
-            
+
             while (isMoving)
             {
-                // Bir sonraki grid pozisyonunu hesapla
                 Vector3Int currentGridPos = cube.GridPosition;
                 Vector3Int nextGridPos = currentGridPos + direction.ToVector3Int();
-                
-                // Ekrandan çıktı mı kontrol et
+
+                // Dışarı çıktı mı?
                 if (IsOutsidePlayArea(cube.transform.position))
                 {
-                    // Küpü yok et ve hareketi bitir
-                    DestroyCube(cube);
+                    ReturnCube(cube);
                     isMoving = false;
                     activeMoves--;
                     OnCubeMoveComplete?.Invoke(cube, MoveResult.Success);
                     break;
                 }
-                
-                // Önünde engel var mı kontrol et
+
+                // Engel kontrolü
                 if (GridManager.Instance.IsValidPosition(nextGridPos))
                 {
                     var objectsAtNext = GridManager.Instance.GetObjectsAtPosition(nextGridPos);
                     if (objectsAtNext.Count > 0)
                     {
-                        // Çarpışma! Engeli kırmızı yap
                         foreach (var obj in objectsAtNext)
                         {
                             if (obj is Cube otherCube)
@@ -113,17 +107,15 @@ namespace PuzzleGame.Gameplay.Managers
                         break;
                     }
                 }
-                
-                // Grid pozisyonunu güncelle
+
+                // Grid güncelle
                 GridManager.Instance.MoveObject(cube, nextGridPos);
-                
-                // Fiziksel pozisyonu güncelle
-                targetPosition = GridManager.Instance.GridToWorldPosition(nextGridPos);
-                
-                // Smooth movement
+
+                // Pozisyon güncelle (smooth)
+                Vector3 targetPosition = GridManager.Instance.GridToWorldPosition(nextGridPos);
                 float elapsed = 0f;
                 Vector3 startPos = cube.transform.position;
-                
+
                 while (elapsed < (1f / moveSpeed))
                 {
                     elapsed += Time.deltaTime;
@@ -131,120 +123,189 @@ namespace PuzzleGame.Gameplay.Managers
                     cube.transform.position = Vector3.Lerp(startPos, targetPosition, t);
                     yield return null;
                 }
-                
+
                 cube.transform.position = targetPosition;
-                
-                // Kısa bir bekleme (isteğe bağlı, daha smooth görünüm için)
                 yield return new WaitForSeconds(0.05f);
             }
-            
-            // Tüm hareketler tamamlandıysa, oyun durumu kontrol edilir
+
             if (activeMoves == 0)
             {
                 CheckGameEnd();
             }
         }
-        
-        /// <summary>
-        /// Küpün oyun alanının dışına çıkıp çıkmadığını kontrol et
-        /// </summary>
+
         private bool IsOutsidePlayArea(Vector3 position)
         {
             var gridSize = GridManager.Instance.GridSize;
             float maxX = gridSize.x * GridManager.Instance.CellSize + exitDistance;
             float maxZ = gridSize.z * GridManager.Instance.CellSize + exitDistance;
-            
+
             return position.x < -exitDistance || position.x > maxX ||
                    position.z < -exitDistance || position.z > maxZ;
         }
-        
-        /// <summary>
-        /// Çarpışma durumunu handle et - engeli kırmızı yap
-        /// </summary>
-        private void HandleCollision(Cube movingCube, Cube obstaceCube)
+
+        private void HandleCollision(Cube movingCube, Cube obstacleCube)
         {
-            OnCubeCollision?.Invoke(movingCube, obstaceCube);
-            
-            // Engel küpü kırmızı yap
-            StartCoroutine(FlashCubeRed(obstaceCube));
+            // 🔊 Çarpışma sesi çal
+            PlayCollisionSound();
+
+            OnCubeCollision?.Invoke(movingCube, obstacleCube);
+
+            // 🎯 Scale animasyonu
+            if (movingCube != null)
+            {
+                movingCube.transform.DOKill();
+                movingCube.transform.localScale = Vector3.one;
+
+                movingCube.transform.DOPunchScale(
+                    Vector3.one * 0.08f,
+                    0.2f,
+                    vibrato: 6,
+                    elasticity: 0.7f
+                );
+            }
+
+            if (obstacleCube != null)
+            {
+                obstacleCube.transform.DOKill();
+                obstacleCube.transform.localScale = Vector3.one;
+
+                obstacleCube.transform.DOPunchScale(
+                    Vector3.one * 0.08f,
+                    0.2f,
+                    6,
+                    0.7f
+                );
+
+                // 🔧 Renk animasyonu - güvenli şekilde
+                StartCoroutine(FlashCubeColor(obstacleCube));
+            }
         }
-        
-        /// <summary>
-        /// Küpü kırmızı renkle yanıp sönder
-        /// </summary>
-        private IEnumerator FlashCubeRed(Cube cube)
+
+        // 🔊 Çarpışma sesi çalma metodu
+        private void PlayCollisionSound()
+        {
+            if (audioSource == null) return;
+
+            // Önce collision sound'u dene
+            if (collisionSound != null)
+            {
+                audioSource.PlayOneShot(collisionSound, collisionVolume);
+            }
+            // Yoksa error sounds'tan rastgele birini çal
+            else if (errorSounds != null && errorSounds.Length > 0)
+            {
+                AudioClip randomErrorSound = errorSounds[Random.Range(0, errorSounds.Length)];
+                audioSource.PlayOneShot(randomErrorSound, collisionVolume);
+            }
+        }
+
+        private IEnumerator FlashCubeColor(Cube cube)
         {
             if (cube == null) yield break;
-            
-            // Orijinal rengini sakla
-            Color originalColor = cube.GetComponent<Renderer>().material.color;
-            Material cubeMaterial = cube.GetComponent<Renderer>().material;
-            
-            float elapsed = 0f;
-            while (elapsed < collisionFlashDuration)
+
+            var renderer = cube.GetComponent<Renderer>();
+            if (renderer == null || renderer.material == null) yield break;
+
+            // 🔧 Orijinal rengi kaydet
+            if (!originalColors.ContainsKey(cube))
             {
-                // Kırmızı ve orijinal renk arasında ping-pong
-                float t = Mathf.PingPong(elapsed * 8f, 1f); // 8f = yanıp sönme hızı
-                cubeMaterial.color = Color.Lerp(Color.red, originalColor, t);
-                
-                elapsed += Time.deltaTime;
-                yield return null;
+                originalColors[cube] = renderer.material.color;
             }
-            
-            // Orijinal renge geri döndür
-            cubeMaterial.color = originalColor;
+            Color originalColor = originalColors[cube];
+
+            // 🔧 Tüm material tween'lerini iptal et
+            renderer.material.DOKill();
+
+            // 🔧 Manuel renk flash (loop kullanmadan)
+            renderer.material.color = Color.red;
+            yield return new WaitForSeconds(0.1f);
+
+            if (renderer != null && renderer.material != null)
+            {
+                renderer.material.color = originalColor;
+                yield return new WaitForSeconds(0.1f);
+            }
+
+            if (renderer != null && renderer.material != null)
+            {
+                renderer.material.color = Color.red;
+                yield return new WaitForSeconds(0.1f);
+            }
+
+            // 🔧 Kesin orijinal renge dön
+            if (renderer != null && renderer.material != null)
+            {
+                renderer.material.color = originalColor;
+            }
         }
-        
+
         /// <summary>
-        /// Küpü yok et (ekrandan çıktığında)
+        /// Destroy yerine pool'a iade
         /// </summary>
-        private void DestroyCube(Cube cube)
+        private void ReturnCube(Cube cube)
         {
             if (cube != null)
             {
                 GridManager.Instance.UnregisterObject(cube);
                 
-                // Smooth fade out efekti (isteğe bağlı)
-                StartCoroutine(FadeOutAndDestroy(cube));
+                // 🔧 Renk cache'ini temizle
+                if (originalColors.ContainsKey(cube))
+                {
+                    originalColors.Remove(cube);
+                }
+                
+                StartCoroutine(FadeOutAndReturn(cube));
             }
         }
-        
-        /// <summary>
-        /// Küpü yavaşça kaybet ve yok et
-        /// </summary>
-        private IEnumerator FadeOutAndDestroy(Cube cube)
+
+        private IEnumerator FadeOutAndReturn(Cube cube)
         {
-            Renderer cubeRenderer = cube.GetComponent<Renderer>();
-            Material cubeMaterial = cubeRenderer.material;
+            var renderer = cube.GetComponent<Renderer>();
+            if (renderer == null || renderer.material == null) 
+            {
+                PoolManager.Instance.Return(cube);
+                yield break;
+            }
+
+            var cubeMaterial = renderer.material;
             Color originalColor = cubeMaterial.color;
-            
+
+            // 🔧 Tüm material animasyonlarını iptal et
+            cubeMaterial.DOKill();
+
             float elapsed = 0f;
             float fadeDuration = 0.3f;
-            
+
             while (elapsed < fadeDuration)
             {
                 elapsed += Time.deltaTime;
                 float alpha = Mathf.Lerp(1f, 0f, elapsed / fadeDuration);
-                cubeMaterial.color = new Color(originalColor.r, originalColor.g, originalColor.b, alpha);
+                
+                if (cubeMaterial != null)
+                {
+                    cubeMaterial.color = new Color(originalColor.r, originalColor.g, originalColor.b, alpha);
+                }
                 yield return null;
             }
-            
-            Destroy(cube.gameObject);
+
+            // Havuza iade
+            PoolManager.Instance.Return(cube);
+
+            // 🔧 Şeffaf olduysa rengi resetle
+            if (cubeMaterial != null)
+            {
+                cubeMaterial.color = originalColor;
+            }
         }
-        
-        /// <summary>
-        /// Level tamamlanma veya başarısız olma durumunu kontrol eder.
-        /// </summary>
+
         public void CheckGameEnd()
         {
-            // Henüz oyun oynanmıyorsa kontrol etme
             if (GameManager.Instance.CurrentState != GameState.Playing)
                 return;
-            
-            // Aktif küp sayısını kontrol et
-            // TODO: Gerçek aktif küp sayısını al
+
             int activeCubeCount = GetActiveCubeCount();
-            
+
             if (activeCubeCount == 0)
             {
                 GameManager.Instance.CompleteLevel();
@@ -254,16 +315,12 @@ namespace PuzzleGame.Gameplay.Managers
                 GameManager.Instance.FailLevel();
             }
         }
-        
-        /// <summary>
-        /// Aktif küp sayısını al (GridManager'dan)
-        /// </summary>
+
         private int GetActiveCubeCount()
         {
-            // GridManager'dan tüm küpleri say
             int count = 0;
             var gridSize = GridManager.Instance.GridSize;
-            
+
             for (int x = 0; x < gridSize.x; x++)
             {
                 for (int z = 0; z < gridSize.z; z++)
@@ -275,16 +332,20 @@ namespace PuzzleGame.Gameplay.Managers
                     }
                 }
             }
-            
             return count;
         }
-        
-        /// <summary>
-        /// Aktif hareket sayısını döndürür (Debug için)
-        /// </summary>
-        public int GetActiveMoveCount()
+
+        public int GetActiveMoveCount() => activeMoves;
+
+        // 🔧 Level temizlenirken renk cache'ini temizle
+        public void ClearColorCache()
         {
-            return activeMoves;
+            originalColors.Clear();
+        }
+
+        private void OnDestroy()
+        {
+            ClearColorCache();
         }
     }
 }

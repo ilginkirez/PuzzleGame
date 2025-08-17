@@ -1,13 +1,18 @@
 using UnityEngine;
 
+using UnityEngine;
+
 public abstract class UIPanel : MonoBehaviour
 {
-    [SerializeField] private CanvasGroup canvasGroup;
+    [SerializeField] protected CanvasGroup canvasGroup; // protected yap → alt sınıflar erişebilsin
 
     public virtual void Initialize()
     {
         if (canvasGroup == null)
             canvasGroup = GetComponent<CanvasGroup>();
+
+        if (canvasGroup == null)
+            canvasGroup = gameObject.AddComponent<CanvasGroup>();
     }
 
     public virtual void Show()
@@ -18,6 +23,7 @@ public abstract class UIPanel : MonoBehaviour
         {
             canvasGroup.alpha = 1;
             canvasGroup.blocksRaycasts = true;
+            canvasGroup.interactable = true; // 🔹 Etkileşim aç
         }
 
         OnShow();
@@ -29,6 +35,7 @@ public abstract class UIPanel : MonoBehaviour
         {
             canvasGroup.alpha = 0;
             canvasGroup.blocksRaycasts = false;
+            canvasGroup.interactable = false; // 🔹 Etkileşim kapat
         }
 
         gameObject.SetActive(false);

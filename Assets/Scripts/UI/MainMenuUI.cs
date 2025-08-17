@@ -2,6 +2,7 @@ using UnityEngine;
 using PuzzleGame.Gameplay.Managers;
 using TMPro;
 using UnityEngine.UI;
+using DG.Tweening; // ✅ DOTween eklendi
 
 public class MainMenuUI : UIPanel
 {
@@ -15,11 +16,22 @@ public class MainMenuUI : UIPanel
     [SerializeField] private Button nextLevelButton;         // ">" button for level selection
     [SerializeField] private int maxAvailableLevel = 4;      // Maximum available level
 
+    [Header("Sound Effects")]
+    [SerializeField] private AudioSource audioSource;       // 🔊 Ses kaynağı
+    [SerializeField] private AudioClip buttonClickSound;    // 🔊 Buton tıklama sesi
+
     private int selectedLevel = 1;
 
     public override void Initialize()
     {
         base.Initialize();
+        
+        // 🔊 AudioSource yoksa ekle
+        if (audioSource == null)
+            audioSource = GetComponent<AudioSource>();
+        
+        if (audioSource == null)
+            audioSource = gameObject.AddComponent<AudioSource>();
         
         if (playButton != null)
             playButton.onClick.AddListener(OnPlayButtonClicked);
@@ -44,11 +56,8 @@ public class MainMenuUI : UIPanel
     {
         if (GameManager.Instance != null)
         {
-            // İlk açılışta kayıtlı level'ı yükle
             int savedLevel = GameManager.Instance.GetSavedLevel();
             selectedLevel = Mathf.Clamp(savedLevel, 1, maxAvailableLevel);
-            
-            // GameManager'daki currentLevel'ı da güncelle (ama oyunu başlatma)
             GameManager.Instance.SetCurrentLevelWithoutStarting(selectedLevel);
         }
         else
@@ -59,74 +68,90 @@ public class MainMenuUI : UIPanel
 
     private void UpdateUI()
     {
-        // Game title
         if (gameTitleText != null)
             gameTitleText.text = "UNPUZZLE";
 
-        // Current level number
         if (levelNumberText != null)
-        {
             levelNumberText.text = $"LEVEL {selectedLevel}";
-        }
 
-        // Play button text
         var playButtonText = playButton?.GetComponentInChildren<TextMeshProUGUI>();
         if (playButtonText != null)
-        {
             playButtonText.text = "PLAY";
-        }
 
-        // Level navigation buttons
         UpdateLevelNavigationButtons();
     }
 
     private void UpdateLevelNavigationButtons()
     {
         if (previousLevelButton != null)
-        {
             previousLevelButton.interactable = selectedLevel > 1;
-        }
 
         if (nextLevelButton != null)
-        {
             nextLevelButton.interactable = selectedLevel < maxAvailableLevel;
+    }
+
+    // 🔊 Ses çalma metodu
+    private void PlayButtonSound()
+    {
+        if (audioSource != null && buttonClickSound != null)
+        {
+            audioSource.PlayOneShot(buttonClickSound);
         }
     }
 
     private void OnPlayButtonClicked()
     {
-        if (GameManager.Instance != null)
+        PlayButtonSound(); // 🔊 Ses çal
+
+        if (playButton != null)
         {
-            // Seçili level'ı GameManager'a bildir ve başlat
-            GameManager.Instance.SelectLevel(selectedLevel);
+            // 🔹 Önce animasyonu çalıştır
+            playButton.transform
+                .DOPunchScale(Vector3.one * 0.1f, 0.3f, 6, 0.6f)
+                .OnComplete(() =>
+                {
+                    // 🔹 Animasyon bittikten sonra level başlat
+                    if (GameManager.Instance != null)
+                    {
+                        GameManager.Instance.SelectLevel(selectedLevel);
+                    }
+                });
+        }
+        else
+        {
+            // Eğer animasyon yoksa direkt level başlat
+            if (GameManager.Instance != null)
+            {
+                GameManager.Instance.SelectLevel(selectedLevel);
+            }
         }
     }
 
     private void OnPreviousLevelClicked()
     {
+        PlayButtonSound(); // 🔊 Ses çal
+
         if (selectedLevel > 1)
         {
             selectedLevel--;
-            // GameManager'daki currentLevel'ı da güncelle
-            if (GameManager.Instance != null)
-                GameManager.Instance.SetCurrentLevelWithoutStarting(selectedLevel);
+            GameManager.Instance?.SetCurrentLevelWithoutStarting(selectedLevel);
             UpdateUI();
         }
     }
 
     private void OnNextLevelClicked()
     {
+        PlayButtonSound(); // 🔊 Ses çal
+
         if (selectedLevel < maxAvailableLevel)
         {
             selectedLevel++;
-            // GameManager'daki currentLevel'ı da güncelle
-            if (GameManager.Instance != null)
-                GameManager.Instance.SetCurrentLevelWithoutStarting(selectedLevel);
+            GameManager.Instance?.SetCurrentLevelWithoutStarting(selectedLevel);
             UpdateUI();
         }
     }
 
-    #region Debug Methods (Inspector'da test için)
+    #region Debug Methods
     
     [ContextMenu("Debug - Set Level 1")]
     private void DebugSetLevel1()
@@ -146,7 +171,6 @@ public class MainMenuUI : UIPanel
 
     private void OnDestroy()
     {
-        // Button listener'ları temizle
         if (playButton != null)
             playButton.onClick.RemoveListener(OnPlayButtonClicked);
 
