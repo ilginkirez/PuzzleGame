@@ -5,6 +5,7 @@ using PuzzleGame.Gameplay.Managers;
 using PuzzleGame.Gameplay.Grid;
 using PuzzleGame.Core.Helpers;
 using System;
+using System.Collections;
 
 namespace PuzzleGame.Gameplay.Cubes
 {
@@ -19,19 +20,42 @@ namespace PuzzleGame.Gameplay.Cubes
         [SerializeField] private Transform arrowVisual;
         [SerializeField] private float arrowYawOffset = 0f;
 
+        [Header("Audio Settings")]
+        [SerializeField] private AudioSource audioSource;
+        [SerializeField] private AudioClip[] clickSounds;
+        [SerializeField] private AudioClip moveSound;
+        [SerializeField] private AudioClip blockedSound;
+        [Range(0f, 1f)] [SerializeField] private float clickVolume = 0.7f;
+        [Range(0f, 1f)] [SerializeField] private float moveVolume = 0.5f;
+        [Range(0f, 1f)] [SerializeField] private float blockedVolume = 0.8f;
+
+        [Header("Click Animation")]
+        [SerializeField] private AnimationCurve scalePunch = AnimationCurve.EaseInOut(0f, 1f, 1f, 1f);
+        [SerializeField] private float punchScale = 1.2f;
+        [SerializeField] private float punchDuration = 0.3f;
+
         public bool IsClickable => true;
         public bool IsMoving { get; private set; }
         public Vector3Int GridPosition { get; set; }
 
-        // Event’ler (varsa)
         public event Action<Cube> OnCubeDestroyed;
+
+        private Vector3 originalScale;
+        private Coroutine scaleCoroutine;
+
+        private void Awake()
+        {
+            if (audioSource == null)
+                audioSource = gameObject.AddComponent<AudioSource>();
+
+            originalScale = transform.localScale;
+        }
 
         public void Initialize(CubeData data)
         {
             cubeType = data.type;
             cubeColor = data.color;
             SetDirection(data.direction);
-
             GridPosition = data.gridPosition;
             transform.position = GridManager.Instance.GridToWorldPosition(GridPosition);
             UpdateColor();
@@ -39,29 +63,60 @@ namespace PuzzleGame.Gameplay.Cubes
 
         private void OnMouseDown()
         {
+            PlayClickSound();
+            PlayScalePunch();
+
+            Debug.Log($"Küp tıklandı: {name}");
             MoveManager.Instance.RequestMove(this, moveDirection);
+        }
+
+        public void OnClick()
+        {
+            OnMouseDown();
+        }
+
+        private void PlayClickSound()
+        {
+            if (clickSounds != null && clickSounds.Length > 0)
+            {
+                AudioClip randomClip = clickSounds[UnityEngine.Random.Range(0, clickSounds.Length)];
+                audioSource.PlayOneShot(randomClip, clickVolume);
+            }
+        }
+
+        private void PlayScalePunch()
+        {
+            if (scaleCoroutine != null)
+                StopCoroutine(scaleCoroutine);
+
+            scaleCoroutine = StartCoroutine(ScalePunchCoroutine());
+        }
+
+        private IEnumerator ScalePunchCoroutine()
+        {
+            float elapsed = 0f;
+
+            while (elapsed < punchDuration)
+            {
+                elapsed += Time.deltaTime;
+                float progress = elapsed / punchDuration;
+                float scale = scalePunch.Evaluate(progress);
+
+                transform.localScale = originalScale * (1f + (punchScale - 1f) * scale);
+                yield return null;
+            }
+
+            transform.localScale = originalScale;
+            scaleCoroutine = null;
         }
 
         private void UpdateColor()
         {
-            // Küpün ana rengi
             if (TryGetComponent(out Renderer r))
                 r.material.color = cubeColor;
 
-            // Oku renklendir
-            UpdateArrowColor();
-        }
-
-        private void UpdateArrowColor()
-        {
             if (arrowVisual != null && arrowVisual.TryGetComponent(out Renderer arrowRenderer))
-            {
-                // sharedMaterial kullanarak draw call artışını engelle
-                Material mat = arrowRenderer.sharedMaterial;
-
-                // Oku sabit beyaz yap
-                mat.color = Color.white;
-            }
+                arrowRenderer.sharedMaterial.color = Color.white;
         }
 
         public void SetDirection(Direction dir)
@@ -89,11 +144,8 @@ namespace PuzzleGame.Gameplay.Cubes
         private void OnValidate()
         {
             UpdateArrowVisual();
-        }
-
-        public void OnClick()
-        {
-            MoveManager.Instance.RequestMove(this, moveDirection);
+            if (Application.isPlaying)
+                UpdateColor();
         }
 
         public bool CanMove(Direction direction)
@@ -113,11 +165,14 @@ namespace PuzzleGame.Gameplay.Cubes
             Vector3Int targetPos = GridPosition + direction.ToVector3Int();
             if (!GridManager.Instance.CanMoveTo(targetPos, this))
             {
+                PlayBlockedSound();
                 onComplete?.Invoke(MoveResult.Blocked);
                 return;
             }
 
             IsMoving = true;
+            PlayMoveSound();
+
             GridManager.Instance.MoveObject(this, targetPos);
             transform.position = GridManager.Instance.GridToWorldPosition(targetPos);
             IsMoving = false;
@@ -125,13 +180,21 @@ namespace PuzzleGame.Gameplay.Cubes
             onComplete?.Invoke(MoveResult.Success);
         }
 
-        public Vector3 WorldPosition => transform.position;
+        private void PlayMoveSound()
+        {
+            if (moveSound != null)
+                audioSource.PlayOneShot(moveSound, moveVolume);
+        }
 
+        private void PlayBlockedSound()
+        {
+            if (blockedSound != null)
+                audioSource.PlayOneShot(blockedSound, blockedVolume);
+        }
+
+        public Vector3 WorldPosition => transform.position;
         public void SetGridPosition(Vector3Int position) => GridPosition = position;
 
-        /// <summary>
-        /// Pool’dan iade edilirken sıfırlama yapılır.
-        /// </summary>
         public void ResetCube()
         {
             cubeType = CubeType.Basic;
@@ -140,15 +203,18 @@ namespace PuzzleGame.Gameplay.Cubes
             IsMoving = false;
             GridPosition = Vector3Int.zero;
 
+            if (scaleCoroutine != null)
+            {
+                StopCoroutine(scaleCoroutine);
+                scaleCoroutine = null;
+            }
+
+            transform.localScale = originalScale;
             UpdateColor();
             UpdateArrowVisual();
-
-            OnCubeDestroyed = null; // Event temizliği
+            OnCubeDestroyed = null;
         }
 
-        /// <summary>
-        /// PoolManager tarafından çağrılacak hook.
-        /// </summary>
         public void OnReturnedToPool()
         {
             ResetCube();

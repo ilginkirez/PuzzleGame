@@ -2,12 +2,13 @@ using UnityEngine;
 using PuzzleGame.Core.Helpers;
 using PuzzleGame.Core.Enums;
 using System;
+using System.Collections;
 
 namespace PuzzleGame.Gameplay.Managers
 {
     /// <summary>
     /// Oyunun genel akışını yöneten ana manager.
-    /// Level durumu, hamle sayısı ve oyun state yönetimi.
+    /// Level durumu, hamle sayısı, oyun state yönetimi ve müzik sistemi.
     /// </summary>
     public class GameManager : Singleton<GameManager>
     {
@@ -16,9 +17,18 @@ namespace PuzzleGame.Gameplay.Managers
         [SerializeField] private int movesLeft;
         [SerializeField] private int maxMoves = 10;
         
+        [Header("Audio Settings")]
+        [SerializeField] private AudioClip backgroundMusic;
+        [SerializeField] private float musicVolume = 0.5f;
+        [SerializeField] private bool playMusicOnStart = true;
+        
         [Header("Debug")]
         [SerializeField] private GameState currentState = GameState.Menu;
         [SerializeField] private bool enableDebugLogs = true;
+
+        // Audio Components
+        private AudioSource musicAudioSource;
+        private bool musicStarted = false;
 
         // Events
         public event Action OnLevelComplete;
@@ -26,6 +36,7 @@ namespace PuzzleGame.Gameplay.Managers
         public event Action<int> OnMovesChanged;
         public event Action<GameState> OnGameStateChanged;
         public event Action<int, int> OnLevelStarted; // level, moves
+        public event Action<bool> OnMusicToggled; // music on/off
 
         // Properties
         public GameState CurrentState => currentState;
@@ -34,13 +45,90 @@ namespace PuzzleGame.Gameplay.Managers
         public int MaxMoves => maxMoves;
         public bool IsPlaying => currentState == GameState.Playing;
         public bool CanUseMove => IsPlaying && movesLeft > 0;
+        
+        // Music Properties
+        public bool IsMusicPlaying => musicAudioSource != null && musicAudioSource.isPlaying;
+        public bool IsMusicMuted => PlayerPrefs.GetInt("MusicMuted", 0) == 1;
+        public float MusicVolume => musicVolume;
 
         protected override void Awake()
         {
             base.Awake();
-            // Awake'de currentLevel'ı değiştirme, menüde seçilecek
+            InitializeAudioSource();
             SetGameState(GameState.Menu);
+            
+            if (playMusicOnStart && backgroundMusic != null)
+            {
+                PlayBackgroundMusic();
+            }
         }
+
+        #region Audio System
+
+        private void InitializeAudioSource()
+        {
+            // Music AudioSource
+            musicAudioSource = GetComponent<AudioSource>();
+            if (musicAudioSource == null)
+            {
+                musicAudioSource = gameObject.AddComponent<AudioSource>();
+            }
+            
+            musicAudioSource.clip = backgroundMusic;
+            musicAudioSource.loop = true;
+            musicAudioSource.volume = PlayerPrefs.GetFloat("MusicVolume", musicVolume);
+            musicAudioSource.playOnAwake = false;
+            
+            musicVolume = musicAudioSource.volume;
+            DebugLog("Music system initialized");
+        }
+
+        public void PlayBackgroundMusic()
+        {
+            if (backgroundMusic != null && !IsMusicMuted && !musicStarted)
+            {
+                musicAudioSource.Play();
+                musicStarted = true;
+                DebugLog("Background music started");
+            }
+        }
+
+        public void ToggleMusic()
+        {
+            bool newMutedState = !IsMusicMuted;
+            PlayerPrefs.SetInt("MusicMuted", newMutedState ? 1 : 0);
+            PlayerPrefs.Save();
+            
+            if (newMutedState)
+            {
+                musicAudioSource.Pause();
+            }
+            else
+            {
+                if (musicStarted)
+                {
+                    musicAudioSource.UnPause();
+                }
+                else
+                {
+                    PlayBackgroundMusic();
+                }
+            }
+            
+            OnMusicToggled?.Invoke(!newMutedState);
+            DebugLog($"Music toggled: {(newMutedState ? "OFF" : "ON")}");
+        }
+
+        public void SetMusicVolume(float volume)
+        {
+            musicVolume = Mathf.Clamp01(volume);
+            musicAudioSource.volume = musicVolume;
+            PlayerPrefs.SetFloat("MusicVolume", musicVolume);
+            PlayerPrefs.Save();
+            DebugLog($"Music volume set to: {musicVolume:F2}");
+        }
+
+        #endregion
 
         #region Level Control
 
@@ -126,6 +214,7 @@ namespace PuzzleGame.Gameplay.Managers
 
             SetGameState(GameState.LevelFailed);
             OnLevelFailed?.Invoke();
+            
             DebugLog($"Level {currentLevel} başarısız!");
         }
 
@@ -237,6 +326,7 @@ namespace PuzzleGame.Gameplay.Managers
             
             SetGameState(GameState.Menu);
             Time.timeScale = 1f;
+            
             // Menüye dönerken progress yükleme, level seçimi UI'dan gelecek
             DebugLog("Ana menüye dönülüyor...");
         }
@@ -323,6 +413,9 @@ namespace PuzzleGame.Gameplay.Managers
         [ContextMenu("Debug - Add 5 Moves")]
         private void DebugAddMoves() => AddMoves(5);
 
+        [ContextMenu("Debug - Toggle Music")]
+        private void DebugToggleMusic() => ToggleMusic();
+
         [ContextMenu("Debug - Reset Progress")]
         private void DebugResetProgress()
         {
@@ -337,6 +430,8 @@ namespace PuzzleGame.Gameplay.Managers
             DebugLog($"Current Level: {currentLevel}");
             DebugLog($"Saved Level: {GetSavedLevel()}");
             DebugLog($"Current State: {currentState}");
+            DebugLog($"Music Playing: {IsMusicPlaying}");
+            DebugLog($"Music Muted: {IsMusicMuted}");
         }
 
         #endregion
