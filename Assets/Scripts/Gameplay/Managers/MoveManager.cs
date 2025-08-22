@@ -12,13 +12,18 @@ namespace PuzzleGame.Gameplay.Managers
 {
     /// <summary>
     /// Küplerin hareket isteklerini yöneten ana sistem.
-    /// Sürekli hareket, çarpışma efektleri ve ekrandan çıkma kontrolü içerir.
+    /// DOTween ile akışkan hareket, çarpışma efektleri ve ekrandan çıkma kontrolü içerir.
     /// </summary>
     public class MoveManager : Singleton<MoveManager>
     {
         [Header("Move Settings")]
         [SerializeField] private float moveSpeed = 3f;
         [SerializeField] private bool allowSimultaneousMoves = false;
+        [SerializeField] private float stepDistance = 1f; // Her adımda ne kadar ilerleyeceği
+
+        [Header("Animation Settings")]
+        [SerializeField] private Ease moveEase = Ease.Linear;
+        [SerializeField] private float animationStepDuration = 0.2f; // Her adım animasyon süresi
 
         [Header("Collision Settings")]
         [SerializeField] private float exitDistance = 15f;
@@ -31,6 +36,7 @@ namespace PuzzleGame.Gameplay.Managers
 
         private int activeMoves = 0;
         private Dictionary<Cube, Color> originalColors = new Dictionary<Cube, Color>();
+        private Dictionary<Cube, Sequence> activeSequences = new Dictionary<Cube, Sequence>();
 
         // Events
         public System.Action<Cube> OnCubeStartMove;
@@ -57,29 +63,53 @@ namespace PuzzleGame.Gameplay.Managers
                 OnCubeMoveComplete?.Invoke(cube, MoveResult.Failed);
                 return;
             }
-            StartContinuousMove(cube, direction);
+            StartSmoothMove(cube, direction);
         }
 
-        private void StartContinuousMove(Cube cube, Direction direction)
+        private void StartSmoothMove(Cube cube, Direction direction)
         {
+            // Eğer bu küp zaten hareket halindeyse, mevcut animasyonu durdur
+            if (activeSequences.ContainsKey(cube))
+            {
+                activeSequences[cube]?.Kill();
+                activeSequences.Remove(cube);
+            }
+
             activeMoves++;
             OnCubeStartMove?.Invoke(cube);
 
-            StartCoroutine(ContinuousMoveCoroutine(cube, direction));
+            StartCoroutine(SmoothMoveCoroutine(cube, direction));
         }
 
-        private IEnumerator ContinuousMoveCoroutine(Cube cube, Direction direction)
+        private IEnumerator SmoothMoveCoroutine(Cube cube, Direction direction)
         {
+            Vector3 directionVector = direction.ToVector3Int();
             bool isMoving = true;
+
+            // DOTween sequence oluştur
+            Sequence moveSequence = DOTween.Sequence();
+            activeSequences[cube] = moveSequence;
 
             while (isMoving)
             {
                 Vector3Int currentGridPos = cube.GridPosition;
                 Vector3Int nextGridPos = currentGridPos + direction.ToVector3Int();
 
-                // Dışarı çıktı mı?
-                if (IsOutsidePlayArea(cube.transform.position))
+                // Hedef world pozisyonu
+                Vector3 targetWorldPos = GridManager.Instance.GridToWorldPosition(nextGridPos);
+
+                // Dışarı çıkma kontrolü - hedef pozisyona göre
+                if (IsOutsidePlayArea(targetWorldPos))
                 {
+                    // Son bir adım at ve çık
+                    moveSequence.Append(
+                        cube.transform.DOMove(targetWorldPos, animationStepDuration / moveSpeed)
+                            .SetEase(moveEase)
+                    );
+
+                    // Animasyon bitene kadar bekle
+                    yield return moveSequence.WaitForCompletion();
+
                     ReturnCube(cube);
                     isMoving = false;
                     activeMoves--;
@@ -93,39 +123,52 @@ namespace PuzzleGame.Gameplay.Managers
                     var objectsAtNext = GridManager.Instance.GetObjectsAtPosition(nextGridPos);
                     if (objectsAtNext.Count > 0)
                     {
+                        bool collisionFound = false;
                         foreach (var obj in objectsAtNext)
                         {
                             if (obj is Cube otherCube)
                             {
                                 HandleCollision(cube, otherCube);
+                                collisionFound = true;
                                 break;
                             }
                         }
-                        isMoving = false;
-                        activeMoves--;
-                        OnCubeMoveComplete?.Invoke(cube, MoveResult.Blocked);
-                        break;
+                        
+                        if (collisionFound)
+                        {
+                            isMoving = false;
+                            activeMoves--;
+                            OnCubeMoveComplete?.Invoke(cube, MoveResult.Blocked);
+                            break;
+                        }
                     }
                 }
 
                 // Grid güncelle
                 GridManager.Instance.MoveObject(cube, nextGridPos);
 
-                // Pozisyon güncelle (smooth)
-                Vector3 targetPosition = GridManager.Instance.GridToWorldPosition(nextGridPos);
-                float elapsed = 0f;
-                Vector3 startPos = cube.transform.position;
+                // Smooth hareket animasyonu ekle
+                moveSequence.Append(
+                    cube.transform.DOMove(targetWorldPos, animationStepDuration / moveSpeed)
+                        .SetEase(moveEase)
+                );
 
-                while (elapsed < (1f / moveSpeed))
+                // Bu adımın animasyonunun bitmesini bekle
+                yield return new WaitForSeconds(animationStepDuration / moveSpeed);
+
+                // Eğer oyun durmuşsa veya küp yok edildiyse çık
+                if (cube == null || GameManager.Instance.CurrentState != GameState.Playing)
                 {
-                    elapsed += Time.deltaTime;
-                    float t = elapsed / (1f / moveSpeed);
-                    cube.transform.position = Vector3.Lerp(startPos, targetPosition, t);
-                    yield return null;
+                    isMoving = false;
+                    activeMoves--;
+                    break;
                 }
+            }
 
-                cube.transform.position = targetPosition;
-                yield return new WaitForSeconds(0.05f);
+            // Sequence'i temizle
+            if (activeSequences.ContainsKey(cube))
+            {
+                activeSequences.Remove(cube);
             }
 
             if (activeMoves == 0)
@@ -146,6 +189,13 @@ namespace PuzzleGame.Gameplay.Managers
 
         private void HandleCollision(Cube movingCube, Cube obstacleCube)
         {
+            // Hareket animasyonunu durdur
+            if (activeSequences.ContainsKey(movingCube))
+            {
+                activeSequences[movingCube]?.Kill();
+                activeSequences.Remove(movingCube);
+            }
+
             // 🔊 Çarpışma sesi çal
             PlayCollisionSound();
 
@@ -217,27 +267,14 @@ namespace PuzzleGame.Gameplay.Managers
             // 🔧 Tüm material tween'lerini iptal et
             renderer.material.DOKill();
 
-            // 🔧 Manuel renk flash (loop kullanmadan)
-            renderer.material.color = Color.red;
-            yield return new WaitForSeconds(0.1f);
+            // DOTween ile renk flash animasyonu
+            Sequence colorSequence = DOTween.Sequence();
+            colorSequence.Append(renderer.material.DOColor(Color.red, 0.1f));
+            colorSequence.Append(renderer.material.DOColor(originalColor, 0.1f));
+            colorSequence.Append(renderer.material.DOColor(Color.red, 0.1f));
+            colorSequence.Append(renderer.material.DOColor(originalColor, 0.1f));
 
-            if (renderer != null && renderer.material != null)
-            {
-                renderer.material.color = originalColor;
-                yield return new WaitForSeconds(0.1f);
-            }
-
-            if (renderer != null && renderer.material != null)
-            {
-                renderer.material.color = Color.red;
-                yield return new WaitForSeconds(0.1f);
-            }
-
-            // 🔧 Kesin orijinal renge dön
-            if (renderer != null && renderer.material != null)
-            {
-                renderer.material.color = originalColor;
-            }
+            yield return colorSequence.WaitForCompletion();
         }
 
         /// <summary>
@@ -247,6 +284,13 @@ namespace PuzzleGame.Gameplay.Managers
         {
             if (cube != null)
             {
+                // Aktif animasyonları durdur
+                if (activeSequences.ContainsKey(cube))
+                {
+                    activeSequences[cube]?.Kill();
+                    activeSequences.Remove(cube);
+                }
+
                 GridManager.Instance.UnregisterObject(cube);
                 
                 // 🔧 Renk cache'ini temizle
@@ -274,25 +318,13 @@ namespace PuzzleGame.Gameplay.Managers
             // 🔧 Tüm material animasyonlarını iptal et
             cubeMaterial.DOKill();
 
-            float elapsed = 0f;
-            float fadeDuration = 0.3f;
-
-            while (elapsed < fadeDuration)
-            {
-                elapsed += Time.deltaTime;
-                float alpha = Mathf.Lerp(1f, 0f, elapsed / fadeDuration);
-                
-                if (cubeMaterial != null)
-                {
-                    cubeMaterial.color = new Color(originalColor.r, originalColor.g, originalColor.b, alpha);
-                }
-                yield return null;
-            }
+            // DOTween ile fade out
+            yield return cubeMaterial.DOFade(0f, 0.3f).WaitForCompletion();
 
             // Havuza iade
             PoolManager.Instance.Return(cube);
 
-            // 🔧 Şeffaf olduysa rengi resetle
+            // 🔧 Rengi resetle
             if (cubeMaterial != null)
             {
                 cubeMaterial.color = originalColor;
@@ -337,6 +369,16 @@ namespace PuzzleGame.Gameplay.Managers
 
         public int GetActiveMoveCount() => activeMoves;
 
+        // 🔧 Tüm aktif küp animasyonlarını durdur
+        public void StopAllCubeAnimations()
+        {
+            foreach (var sequence in activeSequences.Values)
+            {
+                sequence?.Kill();
+            }
+            activeSequences.Clear();
+        }
+
         // 🔧 Level temizlenirken renk cache'ini temizle
         public void ClearColorCache()
         {
@@ -345,6 +387,7 @@ namespace PuzzleGame.Gameplay.Managers
 
         private void OnDestroy()
         {
+            StopAllCubeAnimations();
             ClearColorCache();
         }
     }
