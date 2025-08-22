@@ -25,17 +25,24 @@ namespace PuzzleGame.Gameplay.Managers
         [SerializeField] private bool centerCameraAfterLoad = true;
         [SerializeField] private float cameraPaddingCells = 1f;
         [SerializeField] private float cameraHeight = 10f;
-
-        // 🔹 Inspector'dan ayarlanabilir offset
         [SerializeField] private float cameraOffsetX = 0.5f;
         [SerializeField] private float cameraOffsetZ = 0.5f;
 
         [Header("Level Management")]
         [SerializeField] private int defaultStartLevel = 1;
-        [SerializeField] private bool loadDefaultLevelOnStart = false; // kapalı
+        [SerializeField] private bool loadDefaultLevelOnStart = false;
+
+        [Header("Color Palette")] // 🔹 YENİ: Inspector'dan ayarlanabilir renkler
+        [SerializeField] private Color primaryColor = new Color(1f, 0.4f, 0.8f, 1f);    // #FF66CC - Pembe
+        [SerializeField] private Color secondaryColor = new Color(0.608f, 0.42f, 1f, 1f); // #9B6BFF - Mor
+        [SerializeField] private Color accent1Color = new Color(1f, 0.847f, 0.302f, 1f);   // #FFD84D - Sarı
+        [SerializeField] private Color accent2Color = new Color(1f, 0.647f, 0.145f, 1f);   // #FFA525 - Turuncu
 
         [Header("Debug")]
         [SerializeField] private bool enableDebugLogs = true;
+
+        // 🔹 YENİ: Renk mapping dictionary
+        private Dictionary<string, Color> colorMap;
 
         private readonly List<Cube> spawnedCubes = new();
         private int currentIndex = -1;
@@ -53,11 +60,49 @@ namespace PuzzleGame.Gameplay.Managers
         protected override void Awake()
         {
             base.Awake();
+            // 🔹 YENİ: Renk mapping'ini başlat
+            InitializeColorMap();
         }
 
         private void Start()
         {
             InitializeLevelManager();
+        }
+
+        // 🔹 YENİ: Renk mapping'ini başlat
+        private void InitializeColorMap()
+        {
+            colorMap = new Dictionary<string, Color>
+            {
+                { "#FF66CC", primaryColor },   // Pembe -> Primary
+                { "#9B6BFF", secondaryColor }, // Mor -> Secondary  
+                { "#FFD84D", accent1Color },   // Sarı -> Accent1
+                { "#FFA525", accent2Color }    // Turuncu -> Accent2
+            };
+
+            DebugLog("[LevelManager] Color mapping initialized");
+        }
+
+        // 🔹 YENİ: Hex rengini mapping'den al
+        private Color GetMappedColor(string hexColor)
+        {
+            if (string.IsNullOrEmpty(hexColor))
+                return Color.white;
+
+            // Önce mapping'den kontrol et
+            if (colorMap.ContainsKey(hexColor.ToUpperInvariant()))
+            {
+                return colorMap[hexColor.ToUpperInvariant()];
+            }
+
+            // Mapping'de yoksa hex parse et
+            if (ColorUtility.TryParseHtmlString(hexColor, out Color parsed))
+            {
+                return parsed;
+            }
+
+            // Son çare
+            return Color.white;
         }
 
         private void InitializeLevelManager()
@@ -130,7 +175,6 @@ namespace PuzzleGame.Gameplay.Managers
 
             GameManager.Instance?.StartLevel(data.level, data.moves);
 
-            // 🔹 Kamera JSON'dan gelsin
             if (data.camera != null)
             {
                 cameraHeight       = data.camera.height;
@@ -139,13 +183,11 @@ namespace PuzzleGame.Gameplay.Managers
                 cameraPaddingCells = data.camera.padding;
             }
 
-            // 🔹 ÖNCE kamerayı ayarla (animasyon BAŞLAMADAN)
             if (centerCameraAfterLoad) 
             {
                 SetupCameraBeforeSpawn(data);
             }
 
-            // ✅ SONRA animasyonlu spawn
             StartCoroutine(SpawnCubesCoroutine(data));
 
             OnLevelStarted?.Invoke(CurrentLevel);
@@ -155,7 +197,6 @@ namespace PuzzleGame.Gameplay.Managers
         {
             if (data.cubes == null || data.cubes.Length == 0) return;
 
-            // 🔹 JSON'dan cube pozisyonlarını analiz et
             int minX = int.MaxValue, maxX = int.MinValue;
             int minZ = int.MaxValue, maxZ = int.MinValue;
 
@@ -175,14 +216,12 @@ namespace PuzzleGame.Gameplay.Managers
             float worldWidth = levelWidth * cell;
             float worldHeight = levelHeight * cell;
 
-            // 🔹 Blokların ortası (aynı hesaplama)
             Vector3 centerWorld = new(
                 (minX + maxX) * 0.5f * cell,
                 0f,
                 (minZ + maxZ) * 0.5f * cell
             );
 
-            // 🔹 Inspector offset uygula
             centerWorld.x += cameraOffsetX;
             centerWorld.z += cameraOffsetZ;
 
@@ -209,13 +248,12 @@ namespace PuzzleGame.Gameplay.Managers
         {
             if (data.cubes == null) yield break;
 
-            // satırlara göre grupla
             var rows = new Dictionary<int, List<(CubeData, Vector3)>>();
 
             foreach (var c in data.cubes)
             {
                 Direction dir = ParseDirection(c.direction);
-                Color col = ParseColor(c.color, Color.white);
+                Color col = GetMappedColor(c.color); // 🔹 YENİ: Mapping'den renk al
                 Vector3Int gridPos = new(c.x, 0, c.z);
                 Vector3 worldPos = GridManager.Instance.GridToWorldPosition(gridPos);
 
@@ -227,7 +265,6 @@ namespace PuzzleGame.Gameplay.Managers
                 rows[gridPos.z].Add((cd, worldPos));
             }
 
-            // sırayla satır spawn et
             foreach (var row in rows.OrderBy(r => r.Key))
             {
                 foreach (var (cd, worldPos) in row.Value)
@@ -240,7 +277,7 @@ namespace PuzzleGame.Gameplay.Managers
                     }
                 }
 
-                yield return new WaitForSeconds(0.12f); // satırlar arası delay
+                yield return new WaitForSeconds(0.12f);
             }
         }
 
@@ -251,14 +288,11 @@ namespace PuzzleGame.Gameplay.Managers
 
             cube.Initialize(data);
 
-            // 🎯 Animasyon için başlangıç pozisyonu
             Vector3 startPos = worldPos + Vector3.up * 1.2f;
 
-            // Başlangıç pozisyonu ve scale
             cube.transform.position = startPos;
             cube.transform.localScale = Vector3.zero;
 
-            // DOTween animasyonu
             Sequence seq = DOTween.Sequence();
             seq.Append(cube.transform.DOMove(worldPos, 0.35f).SetEase(Ease.OutQuad));
             seq.Join(cube.transform.DOScale(Vector3.one, 0.35f).SetEase(Ease.OutBack));
@@ -274,7 +308,7 @@ namespace PuzzleGame.Gameplay.Managers
             foreach (var c in data.cubes)
             {
                 Direction dir = ParseDirection(c.direction);
-                Color col = ParseColor(c.color, Color.white);
+                Color col = GetMappedColor(c.color); // 🔹 YENİ: Mapping'den renk al
                 Vector3Int gridPos = new(c.x, 0, c.z);
                 Vector3 worldPos = GridManager.Instance.GridToWorldPosition(gridPos);
 
@@ -318,12 +352,6 @@ namespace PuzzleGame.Gameplay.Managers
             };
         }
 
-        private static Color ParseColor(string s, Color fallback)
-        {
-            if (ColorUtility.TryParseHtmlString(s, out var parsed)) return parsed;
-            return fallback;
-        }
-
         private void FitCameraToContent()
         {
             if (spawnedCubes.Count == 0 || Camera.main == null) return;
@@ -348,14 +376,12 @@ namespace PuzzleGame.Gameplay.Managers
             float worldWidth = levelWidth * cell;
             float worldHeight = levelHeight * cell;
 
-            // 🔹 Blokların ortası
             Vector3 centerWorld = new(
                 (minX + maxX) * 0.5f * cell,
                 0f,
                 (minZ + maxZ) * 0.5f * cell
             );
 
-            // 🔹 Inspector offset uygula
             centerWorld.x += cameraOffsetX;
             centerWorld.z += cameraOffsetZ;
 
@@ -430,4 +456,3 @@ namespace PuzzleGame.Gameplay.Managers
         private void DebugStartLevel4() => StartLevel(4);
     }
 }
-   

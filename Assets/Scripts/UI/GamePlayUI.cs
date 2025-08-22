@@ -6,10 +6,10 @@ using PuzzleGame.Gameplay.Managers;
 public class GameplayUI : UIPanel
 {
     [Header("Game Screen Elements (Per Requirements)")]
-    [SerializeField] private TextMeshProUGUI movesLeftText;  // "Moves Left: X"
-    [SerializeField] private Button resetButton;             // "Reset" button
+    [SerializeField] private TextMeshProUGUI movesLeftText;
+    [SerializeField] private Button resetButton;
 
-    // Optional: Level indicator (not required but helpful)
+    [Header("Optional Elements")]
     [SerializeField] private TextMeshProUGUI currentLevelText;
 
     public override void Initialize()
@@ -19,7 +19,6 @@ public class GameplayUI : UIPanel
         if (resetButton != null)
             resetButton.onClick.AddListener(OnResetButtonClicked);
 
-        // Listen to GameManager events
         if (GameManager.Instance != null)
         {
             GameManager.Instance.OnMovesChanged += UpdateMovesDisplay;
@@ -33,13 +32,11 @@ public class GameplayUI : UIPanel
 
     private void UpdateUI()
     {
-        // Current level (optional display)
         if (currentLevelText != null && GameManager.Instance != null)
         {
             currentLevelText.text = $"Level {GameManager.Instance.CurrentLevel}";
         }
 
-        // Moves left
         if (GameManager.Instance != null)
             UpdateMovesDisplay(GameManager.Instance.MovesLeft);
         else
@@ -57,7 +54,8 @@ public class GameplayUI : UIPanel
 
     private void OnResetButtonClicked()
     {
-        // Restart current level
+        AudioManager.Instance?.PlayButtonClick();
+        
         if (LevelManager.Instance != null)
         {
             LevelManager.Instance.RestartLevel();

@@ -20,19 +20,15 @@ namespace PuzzleGame.Gameplay.Cubes
         [SerializeField] private Transform arrowVisual;
         [SerializeField] private float arrowYawOffset = 0f;
 
-        [Header("Audio Settings")]
-        [SerializeField] private AudioSource audioSource;
-        [SerializeField] private AudioClip[] clickSounds;
-        [SerializeField] private AudioClip moveSound;
-        [SerializeField] private AudioClip blockedSound;
-        [Range(0f, 1f)] [SerializeField] private float clickVolume = 0.7f;
-        [Range(0f, 1f)] [SerializeField] private float moveVolume = 0.5f;
-        [Range(0f, 1f)] [SerializeField] private float blockedVolume = 0.8f;
-
         [Header("Click Animation")]
         [SerializeField] private AnimationCurve scalePunch = AnimationCurve.EaseInOut(0f, 1f, 1f, 1f);
         [SerializeField] private float punchScale = 1.2f;
         [SerializeField] private float punchDuration = 0.3f;
+
+        // ✅ CACHED COMPONENT REFERENCES - Performance Optimization
+        private Renderer cubeRenderer;
+        private Renderer arrowRenderer;
+        private Material cubeMaterial;
 
         public bool IsClickable => true;
         public bool IsMoving { get; private set; }
@@ -45,10 +41,21 @@ namespace PuzzleGame.Gameplay.Cubes
 
         private void Awake()
         {
-            if (audioSource == null)
-                audioSource = gameObject.AddComponent<AudioSource>();
-
+            // ✅ CACHE COMPONENTS ONCE AT START
+            CacheComponents();
             originalScale = transform.localScale;
+        }
+
+        private void CacheComponents()
+        {
+            // Cache main cube renderer and material
+            cubeRenderer = GetComponent<Renderer>();
+            if (cubeRenderer != null)
+                cubeMaterial = cubeRenderer.material;
+
+            // Cache arrow renderer
+            if (arrowVisual != null)
+                arrowRenderer = arrowVisual.GetComponent<Renderer>();
         }
 
         public void Initialize(CubeData data)
@@ -63,25 +70,21 @@ namespace PuzzleGame.Gameplay.Cubes
 
         private void OnMouseDown()
         {
-            PlayClickSound();
-            PlayScalePunch();
-
-            Debug.Log($"Küp tıklandı: {name}");
-            MoveManager.Instance.RequestMove(this, moveDirection);
+            HandleCubeClick();
         }
 
         public void OnClick()
         {
-            OnMouseDown();
+            HandleCubeClick();
         }
 
-        private void PlayClickSound()
+        private void HandleCubeClick()
         {
-            if (clickSounds != null && clickSounds.Length > 0)
-            {
-                AudioClip randomClip = clickSounds[UnityEngine.Random.Range(0, clickSounds.Length)];
-                audioSource.PlayOneShot(randomClip, clickVolume);
-            }
+            Debug.Log($"Küp tıklandı: {name} - AudioManager var mı: {AudioManager.Instance != null}");
+            
+            AudioManager.Instance?.PlayCubeClick();
+            PlayScalePunch();
+            MoveManager.Instance?.RequestMove(this, moveDirection);
         }
 
         private void PlayScalePunch()
@@ -112,10 +115,12 @@ namespace PuzzleGame.Gameplay.Cubes
 
         private void UpdateColor()
         {
-            if (TryGetComponent(out Renderer r))
-                r.material.color = cubeColor;
+            // ✅ USE CACHED REFERENCES - No more TryGetComponent!
+            if (cubeMaterial != null)
+                cubeMaterial.color = cubeColor;
 
-            if (arrowVisual != null && arrowVisual.TryGetComponent(out Renderer arrowRenderer))
+            // ✅ Use cached arrow renderer
+            if (arrowRenderer != null)
                 arrowRenderer.sharedMaterial.color = Color.white;
         }
 
@@ -165,31 +170,19 @@ namespace PuzzleGame.Gameplay.Cubes
             Vector3Int targetPos = GridPosition + direction.ToVector3Int();
             if (!GridManager.Instance.CanMoveTo(targetPos, this))
             {
-                PlayBlockedSound();
+                AudioManager.Instance?.PlayCubeBlocked();
                 onComplete?.Invoke(MoveResult.Blocked);
                 return;
             }
 
             IsMoving = true;
-            PlayMoveSound();
+            AudioManager.Instance?.PlayCubeMove();
 
             GridManager.Instance.MoveObject(this, targetPos);
             transform.position = GridManager.Instance.GridToWorldPosition(targetPos);
             IsMoving = false;
 
             onComplete?.Invoke(MoveResult.Success);
-        }
-
-        private void PlayMoveSound()
-        {
-            if (moveSound != null)
-                audioSource.PlayOneShot(moveSound, moveVolume);
-        }
-
-        private void PlayBlockedSound()
-        {
-            if (blockedSound != null)
-                audioSource.PlayOneShot(blockedSound, blockedVolume);
         }
 
         public Vector3 WorldPosition => transform.position;
@@ -220,6 +213,12 @@ namespace PuzzleGame.Gameplay.Cubes
             ResetCube();
             GridManager.Instance.UnregisterObject(this);
             gameObject.SetActive(false);
+        }
+
+        // ✅ If you need to refresh component cache (for pooled objects)
+        public void RefreshComponentCache()
+        {
+            CacheComponents();
         }
     }
 }

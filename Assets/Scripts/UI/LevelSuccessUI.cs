@@ -11,8 +11,8 @@ public class LevelSuccessUI : UIPanel
     [SerializeField] private Button nextLevelButton;         
     [SerializeField] private TextMeshProUGUI successText;    
 
+    [Header("Visual Effects")]
     [SerializeField] private ParticleSystem celebrationFX;
-    [SerializeField] private AudioSource successSound;
 
     public override void Initialize()
     {
@@ -22,7 +22,7 @@ public class LevelSuccessUI : UIPanel
             nextLevelButton.onClick.AddListener(OnNextLevelClicked);
 
         if (panelRoot != null)
-            panelRoot.localScale = Vector3.one; // default ölçek
+            panelRoot.localScale = Vector3.one;
     }
 
     protected override void OnShow()
@@ -57,28 +57,23 @@ public class LevelSuccessUI : UIPanel
         if (celebrationFX != null)
             celebrationFX.Play();
 
-        if (successSound != null)
-            successSound.Play();
+        AudioManager.Instance?.PlayLevelComplete();
     }
     
     private void PlayEnterAnimation()
     {
-        // Fade-in (CanvasGroup -> UIPanel’den geliyor)
         if (canvasGroup != null)
         {
             canvasGroup.alpha = 0;
             canvasGroup.DOFade(1f, 0.5f);
         }
 
-        // Panel punch
         if (panelRoot != null)
             panelRoot.DOPunchScale(Vector3.one * 0.1f, 0.4f, 8, 0.5f);
 
-        // Text punch
         if (successText != null)
             successText.transform.DOPunchScale(Vector3.one * 0.15f, 0.3f, 6, 0.6f);
 
-        // Button punch
         if (nextLevelButton != null && nextLevelButton.gameObject.activeSelf)
         {
             nextLevelButton.transform
@@ -89,6 +84,8 @@ public class LevelSuccessUI : UIPanel
 
     private void OnNextLevelClicked()
     {
+        AudioManager.Instance?.PlayButtonClick();
+        
         if (LevelManager.Instance != null)
             LevelManager.Instance.NextLevel();
     }

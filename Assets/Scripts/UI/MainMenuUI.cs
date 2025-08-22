@@ -2,36 +2,25 @@ using UnityEngine;
 using PuzzleGame.Gameplay.Managers;
 using TMPro;
 using UnityEngine.UI;
-using DG.Tweening; // ✅ DOTween eklendi
+using DG.Tweening;
 
 public class MainMenuUI : UIPanel
 {
     [Header("Menu Screen Elements (Per Requirements)")]
-    [SerializeField] private TextMeshProUGUI gameTitleText;  // "Unpuzzle" 
-    [SerializeField] private Button playButton;              // "Play" button
-    [SerializeField] private TextMeshProUGUI levelNumberText; // Current level number
+    [SerializeField] private TextMeshProUGUI gameTitleText;
+    [SerializeField] private Button playButton;
+    [SerializeField] private TextMeshProUGUI levelNumberText;
 
     [Header("Optional Level Selection")]
-    [SerializeField] private Button previousLevelButton;     // "<" button for level selection
-    [SerializeField] private Button nextLevelButton;         // ">" button for level selection
-    [SerializeField] private int maxAvailableLevel = 4;      // Maximum available level
-
-    [Header("Sound Effects")]
-    [SerializeField] private AudioSource audioSource;       // 🔊 Ses kaynağı
-    [SerializeField] private AudioClip buttonClickSound;    // 🔊 Buton tıklama sesi
+    [SerializeField] private Button previousLevelButton;
+    [SerializeField] private Button nextLevelButton;
+    [SerializeField] private int maxAvailableLevel = 4;
 
     private int selectedLevel = 1;
 
     public override void Initialize()
     {
         base.Initialize();
-        
-        // 🔊 AudioSource yoksa ekle
-        if (audioSource == null)
-            audioSource = GetComponent<AudioSource>();
-        
-        if (audioSource == null)
-            audioSource = gameObject.AddComponent<AudioSource>();
         
         if (playButton != null)
             playButton.onClick.AddListener(OnPlayButtonClicked);
@@ -90,27 +79,16 @@ public class MainMenuUI : UIPanel
             nextLevelButton.interactable = selectedLevel < maxAvailableLevel;
     }
 
-    // 🔊 Ses çalma metodu
-    private void PlayButtonSound()
-    {
-        if (audioSource != null && buttonClickSound != null)
-        {
-            audioSource.PlayOneShot(buttonClickSound);
-        }
-    }
-
     private void OnPlayButtonClicked()
     {
-        PlayButtonSound(); // 🔊 Ses çal
+        AudioManager.Instance?.PlayButtonClick();
 
         if (playButton != null)
         {
-            // 🔹 Önce animasyonu çalıştır
             playButton.transform
                 .DOPunchScale(Vector3.one * 0.1f, 0.3f, 6, 0.6f)
                 .OnComplete(() =>
                 {
-                    // 🔹 Animasyon bittikten sonra level başlat
                     if (GameManager.Instance != null)
                     {
                         GameManager.Instance.SelectLevel(selectedLevel);
@@ -119,7 +97,6 @@ public class MainMenuUI : UIPanel
         }
         else
         {
-            // Eğer animasyon yoksa direkt level başlat
             if (GameManager.Instance != null)
             {
                 GameManager.Instance.SelectLevel(selectedLevel);
@@ -129,7 +106,7 @@ public class MainMenuUI : UIPanel
 
     private void OnPreviousLevelClicked()
     {
-        PlayButtonSound(); // 🔊 Ses çal
+        AudioManager.Instance?.PlayButtonClick();
 
         if (selectedLevel > 1)
         {
@@ -141,7 +118,7 @@ public class MainMenuUI : UIPanel
 
     private void OnNextLevelClicked()
     {
-        PlayButtonSound(); // 🔊 Ses çal
+        AudioManager.Instance?.PlayButtonClick();
 
         if (selectedLevel < maxAvailableLevel)
         {
@@ -150,24 +127,6 @@ public class MainMenuUI : UIPanel
             UpdateUI();
         }
     }
-
-    #region Debug Methods
-    
-    [ContextMenu("Debug - Set Level 1")]
-    private void DebugSetLevel1()
-    {
-        selectedLevel = 1;
-        UpdateUI();
-    }
-
-    [ContextMenu("Debug - Set Level 4")]
-    private void DebugSetLevel4()
-    {
-        selectedLevel = 4;
-        UpdateUI();
-    }
-
-    #endregion
 
     private void OnDestroy()
     {
