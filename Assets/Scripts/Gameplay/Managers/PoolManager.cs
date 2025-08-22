@@ -27,6 +27,9 @@ namespace PuzzleGame.Gameplay.Managers
         private readonly Dictionary<string, Queue<GameObject>> poolDictionary = new();
         private readonly Dictionary<Type, string> typeToKey = new();
 
+        //  CACHED COMPONENT REFERENCES - Performance Optimization
+        private readonly Dictionary<GameObject, Collider> colliderCache = new();
+
         private readonly HashSet<MonoBehaviour> activeObjects = new();
         private Transform container;
 
@@ -63,6 +66,10 @@ namespace PuzzleGame.Gameplay.Managers
                     var obj = Instantiate(item.prefab, container);
                     obj.name = item.prefab.name;
                     obj.SetActive(false);
+
+                    //  CACHE COLLIDER COMPONENT AT INITIALIZATION
+                    CacheColliderComponent(obj);
+
                     queue.Enqueue(obj);
                 }
 
@@ -73,6 +80,16 @@ namespace PuzzleGame.Gameplay.Managers
                 {
                     typeToKey[mono.GetType()] = item.key;
                 }
+            }
+        }
+
+        //  CACHE COLLIDER COMPONENT FOR PERFORMANCE
+        private void CacheColliderComponent(GameObject obj)
+        {
+            var collider = obj.GetComponent<Collider>();
+            if (collider != null)
+            {
+                colliderCache[obj] = collider;
             }
         }
 
@@ -97,18 +114,27 @@ namespace PuzzleGame.Gameplay.Managers
             }
             else
             {
-                // 🔴 Burada havuz taşmış oluyor
+                //  Burada havuz taşmış oluyor
                 Debug.LogWarning($"[PoolManager] Pool '{key}' boşaldı, yeni Instantiate yapılıyor!");
         
                 var prefab = GetPrefabByKey(key);
                 if (prefab == null) return null;
                 obj = Instantiate(prefab, container);
                 obj.name = prefab.name;
+
+                // ✅ CACHE NEW OBJECT'S COLLIDER
+                CacheColliderComponent(obj);
             }
 
             obj.SetActive(true);
-            var component = obj.GetComponent<T>();
 
+            // ✅ ENABLE COLLIDER USING CACHED REFERENCE
+            if (colliderCache.TryGetValue(obj, out var collider))
+            {
+                collider.enabled = true;
+            }
+
+            var component = obj.GetComponent<T>();
             activeObjects.Add(component);
             return component;
         }
@@ -129,15 +155,17 @@ namespace PuzzleGame.Gameplay.Managers
                 return;
             }
 
-            // 🔹 Grid’den çıkar
+            // 🔹 Grid'den çıkar
             if (obj is IGridObject gridObj)
             {
                 GridManager.Instance?.UnregisterObject(gridObj);
             }
 
-            // 🔹 Collider disable (klik bug fix)
-            if (obj.TryGetComponent<Collider>(out var col))
-                col.enabled = false;
+            // ✅ DISABLE COLLIDER USING CACHED REFERENCE - No more TryGetComponent!
+            if (colliderCache.TryGetValue(obj.gameObject, out var collider))
+            {
+                collider.enabled = false;
+            }
 
             obj.gameObject.SetActive(false);
             queue.Enqueue(obj.gameObject);
@@ -170,6 +198,17 @@ namespace PuzzleGame.Gameplay.Managers
                     return item.prefab;
             }
             return null;
+        }
+
+        //  CLEAR CACHE WHEN OBJECTS ARE DESTROYED
+        public void ClearCache()
+        {
+            colliderCache.Clear();
+        }
+
+        private void OnDestroy()
+        {
+            ClearCache();
         }
     }
 }
